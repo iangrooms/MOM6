@@ -321,7 +321,7 @@ subroutine diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
     s_in(:,:,:)=tv%S(:,:,:)
 
     if (stoch_CS%id_sppt_wts > 0) then
-      call post_data(stoch_CS%id_sppt_wts, stoch_CS%sppt_wts, CS%diag)
+      call post_data(stoch_CS%id_sppt_wts, stoch_CS%sppt_wts, stoch_CS%diag)
     endif
   endif
 

@@ -14,7 +14,7 @@ contains
 
 !!!!!!!!!!!!!!!!!!!!
 subroutine init_stochastic_physics_ocn(delt,geoLonT,geoLatT,nx,ny,nz,pert_epbl_in,do_sppt_in, &
-                                       mpiroot, mpicomm, iret)
+                                       do_skeb_in, mpiroot, mpicomm, iret)
 implicit none
 real,intent(in)       :: delt !< timestep in seconds between calls to run_stochastic_physics_ocn
 integer,intent(in)    :: nx   !< number of gridpoints in the x-direction of the compute grid
@@ -24,6 +24,7 @@ real,intent(in)       :: geoLonT(nx,ny) !< Longitude in degrees
 real,intent(in)       :: geoLatT(nx,ny) !< Latitude in degrees
 logical,intent(in)    :: pert_epbl_in !< logical flag, if true generate random pattern for ePBL perturbations
 logical,intent(in)    :: do_sppt_in   !< logical flag, if true generate random pattern for SPPT perturbations
+logical,intent(in)    :: do_skeb_in   !< logical flag, if true generate random pattern for SPPT perturbations
 integer,intent(in)    :: mpiroot !< root processor
 integer,intent(in)    :: mpicomm !< mpi communicator
 integer, intent(out)  :: iret    !< return code
@@ -37,12 +38,18 @@ if (do_sppt_in.EQV. .true. ) then
    print*,'do_sppt needs to be false if using the stub'
    iret=-1
 endif
+if (do_skeb_in.EQV. .true. ) then
+   print*,'do_skeb needs to be false if using the stub'
+   iret=-1
+endif
+return
 return
 end subroutine init_stochastic_physics_ocn
 
-subroutine run_stochastic_physics_ocn(sppt_wts,t_rp1,t_rp2)
+subroutine run_stochastic_physics_ocn(sppt_wts,skeb_wts,t_rp1,t_rp2)
 implicit none
 real, intent(inout) :: sppt_wts(:,:) !< array containing random weights for SPPT range [0,2]
+real, intent(inout) :: skeb_wts(:,:) !< array containing random weights for SPPT range [0,2]
 real, intent(inout) :: t_rp1(:,:)    !< array containing random weights for ePBL
                                      !! perturbations (KE generation) range [0,2]
 real, intent(inout) :: t_rp2(:,:)    !< array containing random weights for ePBL

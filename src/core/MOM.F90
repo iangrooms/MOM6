@@ -59,7 +59,7 @@ use MOM_boundary_update,       only : call_OBC_register, OBC_register_end, updat
 use MOM_coord_initialization,  only : MOM_initialize_coord
 use MOM_diabatic_driver,       only : diabatic, diabatic_driver_init, diabatic_CS, extract_diabatic_member
 use MOM_diabatic_driver,       only : adiabatic, adiabatic_driver_init, diabatic_driver_end
-use MOM_stochastics,           only : stochastics_init, update_stochastics, stochastic_CS
+use MOM_stochastics,           only : stochastics_init, update_stochastics, stochastic_CS,apply_skeb
 use MOM_diagnostics,           only : calculate_diagnostic_fields, MOM_diagnostics_init
 use MOM_diagnostics,           only : register_transport_diags, post_transport_diagnostics
 use MOM_diagnostics,           only : register_surface_diags, write_static_fields
@@ -675,7 +675,7 @@ subroutine step_MOM(forces_in, fluxes_in, sfc_state, Time_start, time_int_in, CS
     endif
   endif
   ! advance the random pattern if stochastic physics is active
-  if (CS%stoch_CS%do_sppt .OR. CS%stoch_CS%pert_epbl) call update_stochastics(CS%stoch_CS)
+  if (CS%stoch_CS%do_sppt .OR. CS%stoch_CS%pert_epbl .OR. CS%stoch_CS%do_skeb ) call update_stochastics(CS%stoch_CS)
 
   if (do_dyn) then
     if (G%nonblocking_updates) &
@@ -1064,6 +1064,9 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
 
   call cpu_clock_begin(id_clock_dynamics)
 
+  !if (CS%stoch_CS%do_skeb) then
+  !   call apply_skeb(CS%G,CS%GV,CS%stoch_CS,CS%u,CS%v,CS%h,CS%tv,dt,Time_local)
+  !endif
   if ((CS%t_dyn_rel_adv == 0.0) .and. CS%thickness_diffuse .and. CS%thickness_diffuse_first) then
 
     call enable_averages(dt_thermo, Time_local+real_to_time(US%T_to_s*(dt_thermo-dt)), CS%diag)
@@ -1196,6 +1199,9 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
   CS%t_dyn_rel_thermo = CS%t_dyn_rel_thermo + dt
   if (abs(CS%t_dyn_rel_thermo) < 1e-6*dt) CS%t_dyn_rel_thermo = 0.0
   CS%t_dyn_rel_diag = CS%t_dyn_rel_diag + dt
+  !if (CS%stoch_CS%do_skeb) then
+  !   call apply_skeb(CS%G,CS%GV,CS%stoch_CS,CS%u,CS%v,CS%h,CS%tv,dt,Time_local)
+  !endif
 
   call cpu_clock_end(id_clock_dynamics)
 
@@ -1395,6 +1401,9 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
     call diabatic(u, v, h, tv, CS%Hml, fluxes, CS%visc, CS%ADp, CS%CDp, dtdia, &
                   Time_end_thermo, G, GV, US, CS%diabatic_CSp, CS%stoch_CS, CS%OBC, Waves)
     fluxes%fluxes_used = .true.
+    if (CS%stoch_CS%do_skeb) then
+       call apply_skeb(CS%G,CS%GV,CS%stoch_CS,CS%u,CS%v,CS%h,CS%tv,dtdia,Time_end_thermo)
+    endif
 
     if (showCallTree) call callTree_waypoint("finished diabatic (step_MOM_thermo)")
 

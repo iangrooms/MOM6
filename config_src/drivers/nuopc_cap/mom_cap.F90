@@ -1747,6 +1747,7 @@ subroutine ModelAdvance(gcomp, rc)
                 "ocn_stoch.res.", year, month, day, hour, minute, seconds,".nc"
         endif
         call ESMF_LogWrite("MOM_cap: Writing restart :  "//trim(restartname), ESMF_LOGMSG_INFO)
+        call ESMF_LogWrite("MOM_cap: stoch restart :  "//trim(stoch_restartname), ESMF_LOGMSG_INFO)
 
         ! write restart file(s)
         call ocean_model_restart(ocean_state, restartname=restartname, &

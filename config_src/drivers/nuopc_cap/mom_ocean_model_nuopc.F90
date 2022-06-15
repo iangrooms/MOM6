@@ -179,6 +179,8 @@ type, public :: ocean_state_type ; private
                               !! processes before time stepping the dynamics.
   logical :: do_sppt         !< If true, stochastically perturb the diabatic and
                              !! write restarts
+  logical :: do_skeb         !< If true, stochastically perturb the currents and
+                             !! write restarts
   logical :: pert_epbl       !< If true, then randomly perturb the KE dissipation and
                              !! genration termsand write restarts
 
@@ -442,6 +444,11 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
                  "controlled by the nam_stoch namelist in the UFS model only.", &
                  default=.false.)
 
+  call get_param(param_file, mdl, "DO_SKEB", OS%do_skeb, &
+                 "If true, then stochastically perturb the currents "//&
+                 "Amplitude and correlations are "//&
+                 "controlled by the nam_stoch namelist in the UFS model only.", &
+                 default=.false.)
   call close_param_file(param_file)
   call diag_mediator_close_registration(OS%diag)
 
@@ -752,8 +759,9 @@ subroutine ocean_model_restart(OS, timestamp, restartname, stoch_restartname, nu
         endif
      endif
   endif
+  print*,'in write restart',trim(stoch_restartname),OS%do_skeb
   if (present(stoch_restartname)) then
-      if (OS%do_sppt .OR. OS%pert_epbl) then
+      if (OS%do_sppt .OR. OS%pert_epbl .OR. OS%do_skeb ) then
          call write_stoch_restart_ocn('RESTART/'//trim(stoch_restartname))
      endif
   endif
