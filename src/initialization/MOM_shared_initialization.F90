@@ -27,6 +27,7 @@ public initialize_topography_named, limit_topography, diagnoseMaximumDepth
 public set_rotation_planetary, set_rotation_beta_plane, initialize_grid_rotation_angle
 public reset_face_lengths_named, reset_face_lengths_file, reset_face_lengths_list
 public read_face_length_list, set_velocity_depth_max, set_velocity_depth_min
+public set_subgrid_topo_at_vel_from_file
 public compute_global_grid_integrals, write_ocean_geometry_file
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
@@ -184,7 +185,7 @@ subroutine apply_topography_edits_from_file(D, G, param_file, US)
   type(unit_scale_type),            intent(in)    :: US !< A dimensional unit scaling type
 
   ! Local variables
-  real, dimension(:), allocatable :: new_depth ! The new values of the depths [m]
+  real, dimension(:), allocatable :: new_depth ! The new values of the depths [Z ~> m]
   integer, dimension(:), allocatable :: ig, jg ! The global indicies of the points to modify
   character(len=200) :: topo_edits_file, inputdir ! Strings for file/path
   character(len=40)  :: mdl = "apply_topography_edits_from_file" ! This subroutine's name.
@@ -247,22 +248,22 @@ subroutine apply_topography_edits_from_file(D, G, param_file, US)
   ! Read iEdit, jEdit and zEdit
   call read_variable(topo_edits_file, 'iEdit', ig, ncid_in=ncid)
   call read_variable(topo_edits_file, 'jEdit', jg, ncid_in=ncid)
-  call read_variable(topo_edits_file, 'zEdit', new_depth, ncid_in=ncid)
+  call read_variable(topo_edits_file, 'zEdit', new_depth, ncid_in=ncid, scale=US%m_to_Z)
   call close_file_to_read(ncid, topo_edits_file)
 
   do n = 1, n_edits
     i = ig(n) - G%isd_global + 2 ! +1 for python indexing and +1 for ig-isd_global+1
     j = jg(n) - G%jsd_global + 2
     if (i>=G%isc .and. i<=G%iec .and. j>=G%jsc .and. j<=G%jec) then
-      if (new_depth(n)*US%m_to_Z /= mask_depth) then
+      if (new_depth(n) /= mask_depth) then
         write(stdout,'(a,3i5,f8.2,a,f8.2,2i4)') &
-          'Ocean topography edit: ', n, ig(n), jg(n), D(i,j)*US%Z_to_m, '->', abs(new_depth(n)), i, j
-        D(i,j) = abs(US%m_to_Z*new_depth(n)) ! Allows for height-file edits (i.e. converts negatives)
+          'Ocean topography edit: ', n, ig(n), jg(n), D(i,j)*US%Z_to_m, '->', abs(US%Z_to_m*new_depth(n)), i, j
+        D(i,j) = abs(new_depth(n)) ! Allows for height-file edits (i.e. converts negatives)
       else
         if (topo_edits_change_mask) then
           write(stdout,'(a,3i5,f8.2,a,f8.2,2i4)') &
-            'Ocean topography edit: ',n,ig(n),jg(n),D(i,j)*US%Z_to_m,'->',abs(new_depth(n)),i,j
-            D(i,j) = abs(US%m_to_Z*new_depth(n)) ! Allows for height-file edits (i.e. converts negatives)
+            'Ocean topography edit: ',n,ig(n),jg(n),D(i,j)*US%Z_to_m,'->',abs(US%Z_to_m*new_depth(n)),i,j
+            D(i,j) = abs(new_depth(n)) ! Allows for height-file edits (i.e. converts negatives)
         else
           call MOM_error(FATAL, ' apply_topography_edits_from_file: '//&
             "A zero depth edit would change the land mask and is not allowed in"//trim(topo_edits_file))
@@ -454,8 +455,8 @@ subroutine set_rotation_planetary(f, G, param_file, US)
   call callTree_enter(trim(mdl)//"(), MOM_shared_initialization.F90")
 
   call get_param(param_file, "set_rotation_planetary", "OMEGA", omega, &
-                 "The rotation rate of the earth.", units="s-1", &
-                 default=7.2921e-5, scale=US%T_to_s)
+                 "The rotation rate of the earth.", &
+                 units="s-1", default=7.2921e-5, scale=US%T_to_s)
   PI = 4.0*atan(1.0)
 
   do I=G%IsdB,G%IedB ; do J=G%JsdB,G%JedB
@@ -802,7 +803,7 @@ subroutine reset_face_lengths_list(G, param_file, US)
   ! Local variables
   character(len=120), pointer, dimension(:) :: lines => NULL()
   character(len=120) :: line
-  character(len=200) :: filename, chan_file, inputdir, mesg ! Strings for file/path
+  character(len=200) :: filename, chan_file, inputdir   ! Strings for file/path
   character(len=40)  :: mdl = "reset_face_lengths_list" ! This subroutine's name.
   real, allocatable, dimension(:,:) :: &
     u_lat, u_lon, v_lat, v_lon ! The latitude and longitude ranges of faces [degrees]
@@ -826,7 +827,7 @@ subroutine reset_face_lengths_list(G, param_file, US)
   logical :: fatal_unused_lengths
   integer :: unused
   integer :: ios, iounit, isu, isv
-  integer :: last, num_lines, nl_read, ln, npt, u_pt, v_pt
+  integer :: num_lines, nl_read, ln, npt, u_pt, v_pt
   integer :: i, j, isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   integer :: isu_por, isv_por
   logical :: found_u_por, found_v_por
@@ -893,13 +894,13 @@ subroutine reset_face_lengths_list(G, param_file, US)
     allocate(v_line_used(num_lines), source=0)
     allocate(v_line_no(num_lines), source=0)
 
-    allocate(Dmin_u(num_lines))    ; Dmin_u(:) = 0.0
-    allocate(Dmax_u(num_lines))    ; Dmax_u(:) = 0.0
-    allocate(Davg_u(num_lines))    ; Davg_u(:) = 0.0
+    allocate(Dmin_u(num_lines), source=0.0)
+    allocate(Dmax_u(num_lines), source=0.0)
+    allocate(Davg_u(num_lines), source=0.0)
 
-    allocate(Dmin_v(num_lines))    ; Dmin_v(:) = 0.0
-    allocate(Dmax_v(num_lines))    ; Dmax_v(:) = 0.0
-    allocate(Davg_v(num_lines))    ; Davg_v(:) = 0.0
+    allocate(Dmin_v(num_lines), source=0.0)
+    allocate(Dmax_v(num_lines), source=0.0)
+    allocate(Davg_v(num_lines), source=0.0)
 
     ! Actually read the lines.
     if (is_root_pe()) then
@@ -1124,7 +1125,7 @@ subroutine read_face_length_list(iounit, filename, num_lines, lines)
   ! list file, after removing comments.
   character(len=120) :: line, line_up
   logical :: found_u, found_v
-  integer :: isu, isv, icom, verbose
+  integer :: isu, isv, icom
   integer :: last
 
   num_lines = 0
@@ -1163,6 +1164,82 @@ subroutine read_face_length_list(iounit, filename, num_lines, lines)
                   "Error while reading file "//trim(filename))
 
 end subroutine read_face_length_list
+! -----------------------------------------------------------------------------
+
+! -----------------------------------------------------------------------------
+!> Read from a file the maximum, minimum and average bathymetry at velocity points,
+!! for the use of porous barrier.
+!! Note that we assume the depth values in the sub-grid bathymetry file of the same
+!! convention as in-cell bathymetry file, i.e. positive below the sea surface and
+!! increasing downward; while in subroutine reset_face_lengths_list, it is implied
+!! that read-in fields min_bathy, max_bathy and avg_bathy from the input file
+!! CHANNEL_LIST_FILE all have negative values below the surface. Therefore, to ensure
+!! backward compatibility, all signs of the variable are inverted here.
+!! And porous_Dmax[UV] = shallowest point, porous_Dmin[UV] = deepest point
+subroutine set_subgrid_topo_at_vel_from_file(G, param_file, US)
+  type(dyn_horgrid_type), intent(inout) :: G          !< The dynamic horizontal grid type
+  type(param_file_type),  intent(in)    :: param_file !< Parameter file structure
+  type(unit_scale_type),  intent(in)    :: US         !< A dimensional unit scaling type
+
+  ! Local variables
+  character(len=200) :: filename, topo_file, inputdir ! Strings for file/path
+  character(len=200) :: varname_uhi, varname_ulo, varname_uav, &
+                        varname_vhi, varname_vlo, varname_vav     ! Variable names in file
+  character(len=40)  :: mdl = "set_subgrid_topo_at_vel_from_file" ! This subroutine's name.
+  integer :: i, j
+
+  call callTree_enter(trim(mdl)//"(), MOM_shared_initialization.F90")
+
+  call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
+  inputdir = slasher(inputdir)
+  call get_param(param_file, mdl, "TOPO_AT_VEL_FILE", topo_file, &
+                 "The file from which the bathymetry parameters at the velocity points are read.  "//&
+                 "While the names of the parameters reflect their physical locations, i.e. HIGH is above LOW, "//&
+                 "their signs follow the model's convention, which is positive below the sea surface", &
+                 default="topog_edge.nc")
+  call get_param(param_file, mdl, "TOPO_AT_VEL_VARNAME_U_HIGH", varname_uhi, &
+                 "The variable name of the highest bathymetry at the u-cells in TOPO_AT_VEL_FILE.", &
+                 default="depthu_hi")
+  call get_param(param_file, mdl, "TOPO_AT_VEL_VARNAME_U_LOW",  varname_ulo, &
+                 "The variable name of the lowest bathymetry at the u-cells in TOPO_AT_VEL_FILE.", &
+                 default="depthu_lo")
+  call get_param(param_file, mdl, "TOPO_AT_VEL_VARNAME_U_AVE",  varname_uav, &
+                 "The variable name of the average bathymetry at the u-cells in TOPO_AT_VEL_FILE.", &
+                 default="depthu_av")
+  call get_param(param_file, mdl, "TOPO_AT_VEL_VARNAME_V_HIGH", varname_vhi, &
+                 "The variable name of the highest bathymetry at the v-cells in TOPO_AT_VEL_FILE.", &
+                 default="depthv_hi")
+  call get_param(param_file, mdl, "TOPO_AT_VEL_VARNAME_V_LOW",  varname_vlo, &
+                 "The variable name of the lowest bathymetry at the v-cells in TOPO_AT_VEL_FILE.", &
+                 default="depthv_lo")
+  call get_param(param_file, mdl, "TOPO_AT_VEL_VARNAME_V_AVE",  varname_vav, &
+                 "The variable name of the average bathymetry at the v-cells in TOPO_AT_VEL_FILE.", &
+                 default="depthv_av")
+
+  filename = trim(inputdir)//trim(topo_file)
+  call log_param(param_file, mdl, "INPUTDIR/TOPO_AT_VEL_FILE", filename)
+
+  if (.not.file_exists(filename, G%Domain)) call MOM_error(FATAL, &
+       " set_subgrid_topo_at_vel_from_file: Unable to open "//trim(filename))
+
+  call MOM_read_vector(filename, trim(varname_uhi), trim(varname_vhi), &
+                       G%porous_DmaxU, G%porous_DmaxV, G%Domain, stagger=CGRID_NE, scale=US%m_to_Z)
+  call MOM_read_vector(filename, trim(varname_ulo), trim(varname_vlo), &
+                       G%porous_DminU, G%porous_DminV, G%Domain, stagger=CGRID_NE, scale=US%m_to_Z)
+  call MOM_read_vector(filename, trim(varname_uav), trim(varname_vav), &
+                       G%porous_DavgU, G%porous_DavgV, G%Domain, stagger=CGRID_NE, scale=US%m_to_Z)
+
+  ! The signs of the depth parameters need to be inverted to be backward compatible with input files
+  ! used by subroutine reset_face_lengths_list, which assumes depth is negative below the sea surface.
+  G%porous_DmaxU = -G%porous_DmaxU; G%porous_DminU = -G%porous_DminU; G%porous_DavgU = -G%porous_DavgU
+  G%porous_DmaxV = -G%porous_DmaxV; G%porous_DminV = -G%porous_DminV; G%porous_DavgV = -G%porous_DavgV
+
+  call pass_vector(G%porous_DmaxU, G%porous_DmaxV, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)
+  call pass_vector(G%porous_DminU, G%porous_DminV, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)
+  call pass_vector(G%porous_DavgU, G%porous_DavgV, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)
+
+  call callTree_leave(trim(mdl)//'()')
+end subroutine set_subgrid_topo_at_vel_from_file
 ! -----------------------------------------------------------------------------
 
 ! -----------------------------------------------------------------------------

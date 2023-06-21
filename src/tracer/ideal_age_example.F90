@@ -3,16 +3,18 @@ module ideal_age_example
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
+use MOM_coms,          only : EFP_type
 use MOM_coupler_types, only : set_coupler_type_data, atmos_ocn_coupler_flux
 use MOM_diag_mediator, only : diag_ctrl
-use MOM_error_handler, only : MOM_error, FATAL, WARNING
+use MOM_error_handler, only : MOM_error, FATAL, WARNING, NOTE
 use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
 use MOM_forcing_type, only : forcing
 use MOM_grid, only : ocean_grid_type
 use MOM_hor_index, only : hor_index_type
 use MOM_io, only : file_exists, MOM_read_data, slasher, vardesc, var_desc, query_vardesc
 use MOM_open_boundary, only : ocean_OBC_type
-use MOM_restart, only : query_initialized, MOM_restart_CS
+use MOM_restart, only : query_initialized, set_initialized, MOM_restart_CS
+use MOM_spatial_means, only : global_mass_int_EFP
 use MOM_sponge, only : set_up_sponge_field, sponge_CS
 use MOM_time_manager, only : time_type, time_type_to_real
 use MOM_tracer_registry, only : register_tracer, tracer_registry_type
@@ -29,15 +31,16 @@ implicit none ; private
 public register_ideal_age_tracer, initialize_ideal_age_tracer
 public ideal_age_tracer_column_physics, ideal_age_tracer_surface_state
 public ideal_age_stock, ideal_age_example_end
+public count_BL_layers
 
-integer, parameter :: NTR_MAX = 3 !< the maximum number of tracers in this module.
+integer, parameter :: NTR_MAX = 4 !< the maximum number of tracers in this module.
 
 !> The control structure for the ideal_age_tracer package
 type, public :: ideal_age_tracer_CS ; private
   integer :: ntr    !< The number of tracers that are actually used.
   logical :: coupled_tracers = .false. !< These tracers are not offered to the coupler.
-  integer :: nkml   !< The number of layers in the mixed layer.  The ideal
-                    !1 age tracers are reset in the top nkml layers.
+  integer :: nkbl   !< The number of layers in the boundary layer.  The ideal
+                    !1 age tracers are reset in the top nkbl layers.
   character(len=200) :: IC_file !< The file in which the age-tracer initial values
                     !! can be found, or an empty string for internal initialization.
   logical :: Z_IC_file !< If true, the IC_file is in Z-space.  The default is false.
@@ -47,9 +50,12 @@ type, public :: ideal_age_tracer_CS ; private
   real, dimension(NTR_MAX) :: IC_val = 0.0    !< The (uniform) initial condition value.
   real, dimension(NTR_MAX) :: young_val = 0.0 !< The value assigned to tr at the surface.
   real, dimension(NTR_MAX) :: land_val = -1.0 !< The value of tr used where land is masked out.
-  real, dimension(NTR_MAX) :: sfc_growth_rate !< The exponential growth rate for the surface value [year-1].
+  real, dimension(NTR_MAX) :: growth_rate !< The exponential growth rate for the young value [year-1].
   real, dimension(NTR_MAX) :: tracer_start_year !< The year in which tracers start aging, or at which the
                                               !! surface value equals young_val, in years.
+  logical :: use_real_BL_depth   !< If true, uses the BL scheme to determine the number of
+                                 !! layers above the BL depth instead of the fixed nkbl value.
+  integer :: BL_residence_num    !< The tracer number assigned to the BL residence tracer in this module
   logical :: tracers_may_reinit  !< If true, these tracers be set up via the initialization code if
                                  !! they are not found in the restart files.
   logical :: tracer_ages(NTR_MAX) !< Indicates whether each tracer ages.
@@ -62,6 +68,7 @@ type, public :: ideal_age_tracer_CS ; private
   type(MOM_restart_CS), pointer :: restart_CSp => NULL() !< A pointer to the restart controls structure
 
   type(vardesc) :: tr_desc(NTR_MAX) !< Descriptions and metadata for the tracers
+
 end type ideal_age_tracer_CS
 
 contains
@@ -78,21 +85,20 @@ function register_ideal_age_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
                                                   !! diffusion module
   type(MOM_restart_CS), target, intent(inout) :: restart_CS !< MOM restart control struct
 
-! This include declares and sets the variable "version".
-#include "version_variable.h"
+  ! This include declares and sets the variable "version".
+# include "version_variable.h"
   character(len=40)  :: mdl = "ideal_age_example" ! This module's name.
   character(len=200) :: inputdir ! The directory where the input files are.
   character(len=48)  :: var_name ! The variable's name.
   real, pointer :: tr_ptr(:,:,:) => NULL()
   logical :: register_ideal_age_tracer
-  logical :: do_ideal_age, do_vintage, do_ideal_age_dated
+  logical :: do_ideal_age, do_vintage, do_ideal_age_dated, do_BL_residence
   integer :: isd, ied, jsd, jed, nz, m
   isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed ; nz = GV%ke
 
   if (associated(CS)) then
-    call MOM_error(WARNING, "register_ideal_age_tracer called with an "// &
-                             "associated control structure.")
-    return
+    call MOM_error(FATAL, "register_ideal_age_tracer called with an "// &
+                          "associated control structure.")
   endif
   allocate(CS)
 
@@ -100,20 +106,26 @@ function register_ideal_age_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
   call log_version(param_file, mdl, version, "")
   call get_param(param_file, mdl, "DO_IDEAL_AGE", do_ideal_age, &
                  "If true, use an ideal age tracer that is set to 0 age "//&
-                 "in the mixed layer and ages at unit rate in the interior.", &
+                 "in the boundary layer and ages at unit rate in the interior.", &
                  default=.true.)
   call get_param(param_file, mdl, "DO_IDEAL_VINTAGE", do_vintage, &
                  "If true, use an ideal vintage tracer that is set to an "//&
-                 "exponentially increasing value in the mixed layer and "//&
+                 "exponentially increasing value in the boundary layer and "//&
                  "is conserved thereafter.", default=.false.)
   call get_param(param_file, mdl, "DO_IDEAL_AGE_DATED", do_ideal_age_dated, &
                  "If true, use an ideal age tracer that is everywhere 0 "//&
                  "before IDEAL_AGE_DATED_START_YEAR, but the behaves like "//&
                  "the standard ideal age tracer - i.e. is set to 0 age in "//&
-                 "the mixed layer and ages at unit rate in the interior.", &
+                 "the boundary layer and ages at unit rate in the interior.", &
                  default=.false.)
-
-
+  call get_param(param_file, mdl, "DO_BL_RESIDENCE", do_BL_residence, &
+                 "If true, use a residence tracer that is set to 0 age "//&
+                 "in the interior and ages at unit rate in the boundary layer.", &
+                 default=.false.)
+  call get_param(param_file, mdl, "USE_REAL_BL_DEPTH", CS%use_real_BL_depth, &
+                 "If true, the ideal age tracers will use the boundary layer "//&
+                 "depth diagnosed from the BL or bulkmixedlayer scheme.", &
+                 default=.false.)
   call get_param(param_file, mdl, "AGE_IC_FILE", CS%IC_file, &
                  "The file in which the age-tracer initial values can be "//&
                  "found, or an empty string for internal initialization.", &
@@ -137,7 +149,7 @@ function register_ideal_age_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
   if (do_ideal_age) then
     CS%ntr = CS%ntr + 1 ; m = CS%ntr
     CS%tr_desc(m) = var_desc("age", "yr", "Ideal Age Tracer", cmor_field_name="agessc", caller=mdl)
-    CS%tracer_ages(m) = .true. ; CS%sfc_growth_rate(m) = 0.0
+    CS%tracer_ages(m) = .true. ; CS%growth_rate(m) = 0.0
     CS%IC_val(m) = 0.0 ; CS%young_val(m) = 0.0 ; CS%tracer_start_year(m) = 0.0
   endif
 
@@ -145,7 +157,7 @@ function register_ideal_age_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
     CS%ntr = CS%ntr + 1 ; m = CS%ntr
     CS%tr_desc(m) = var_desc("vintage", "yr", "Exponential Vintage Tracer", &
                             caller=mdl)
-    CS%tracer_ages(m) = .false. ; CS%sfc_growth_rate(m) = 1.0/30.0
+    CS%tracer_ages(m) = .false. ; CS%growth_rate(m) = 1.0/30.0
     CS%IC_val(m) = 0.0 ; CS%young_val(m) = 1e-20 ; CS%tracer_start_year(m) = 0.0
     call get_param(param_file, mdl, "IDEAL_VINTAGE_START_YEAR", CS%tracer_start_year(m), &
                  "The date at which the ideal vintage tracer starts.", &
@@ -156,11 +168,19 @@ function register_ideal_age_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
     CS%ntr = CS%ntr + 1 ; m = CS%ntr
     CS%tr_desc(m) = var_desc("age_dated","yr","Ideal Age Tracer with a Start Date",&
                             caller=mdl)
-    CS%tracer_ages(m) = .true. ; CS%sfc_growth_rate(m) = 0.0
+    CS%tracer_ages(m) = .true. ; CS%growth_rate(m) = 0.0
     CS%IC_val(m) = 0.0 ; CS%young_val(m) = 0.0 ; CS%tracer_start_year(m) = 0.0
     call get_param(param_file, mdl, "IDEAL_AGE_DATED_START_YEAR", CS%tracer_start_year(m), &
                  "The date at which the dated ideal age tracer starts.", &
                  units="years", default=0.0)
+  endif
+
+  CS%BL_residence_num = 0
+  if (do_BL_residence) then
+    CS%ntr = CS%ntr + 1 ; m = CS%ntr; CS%BL_residence_num = CS%ntr
+    CS%tr_desc(m) = var_desc("BL_age", "yr", "BL Residence Time Tracer", caller=mdl)
+    CS%tracer_ages(m) = .true. ; CS%growth_rate(m) = 0.0
+    CS%IC_val(m) = 0.0 ; CS%young_val(m) = 0.0 ; CS%tracer_start_year(m) = 0.0
   endif
 
   allocate(CS%tr(isd:ied,jsd:jed,nz,CS%ntr), source=0.0)
@@ -215,14 +235,10 @@ subroutine initialize_ideal_age_tracer(restart, day, G, GV, US, h, diag, OBC, CS
 
   ! Local variables
   character(len=24) :: name     ! A variable's name in a NetCDF file.
-  character(len=72) :: longname ! The long name of that variable.
-  character(len=48) :: units    ! The dimensions of the variable.
-  character(len=48) :: flux_units ! The units for age tracer fluxes, either
-                                ! years m3 s-1 or years kg s-1.
-  character(len=72) :: cmorname ! The CMOR name of that variable.
   logical :: OK
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz, m
   integer :: IsdB, IedB, JsdB, JedB
+  logical :: use_real_BL_depth
 
   if (.not.associated(CS)) return
   if (CS%ntr < 1) return
@@ -232,7 +248,7 @@ subroutine initialize_ideal_age_tracer(restart, day, G, GV, US, h, diag, OBC, CS
 
   CS%Time => day
   CS%diag => diag
-  CS%nkml = max(GV%nkml,1)
+  CS%nkbl = max(GV%nkml,1)
 
   do m=1,CS%ntr
     call query_vardesc(CS%tr_desc(m), name=name, &
@@ -269,6 +285,7 @@ subroutine initialize_ideal_age_tracer(restart, day, G, GV, US, h, diag, OBC, CS
         enddo ; enddo ; enddo
       endif
 
+      call set_initialized(CS%tr(:,:,:,m), name, CS%restart_CSp)
     endif ! restart
   enddo ! Tracer loop
 
@@ -280,7 +297,7 @@ end subroutine initialize_ideal_age_tracer
 
 !> Applies diapycnal diffusion, aging and regeneration at the surface to the ideal age tracers
 subroutine ideal_age_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, US, CS, &
-              evap_CFL_limit, minimum_forcing_depth)
+              evap_CFL_limit, minimum_forcing_depth, Hbl)
   type(ocean_grid_type),   intent(in) :: G    !< The ocean's grid structure
   type(verticalGrid_type), intent(in) :: GV   !< The ocean's vertical grid structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
@@ -305,6 +322,8 @@ subroutine ideal_age_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, 
                                               !! be fluxed out of the top layer in a timestep [nondim]
   real,          optional, intent(in) :: minimum_forcing_depth !< The smallest depth over which
                                               !! fluxes can be applied [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G)), optional, intent(in) :: Hbl !< Boundary layer depth [Z ~> m]
+
 !   This subroutine applies diapycnal diffusion and any other column
 ! tracer physics or chemistry to the tracers from this file.
 ! This is a simple example of a set of advected passive tracers.
@@ -312,12 +331,24 @@ subroutine ideal_age_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, 
 ! The arguments to this subroutine are redundant in that
 !     h_new(k) = h_old(k) + ea(k) - eb(k-1) + eb(k) - ea(k+1)
   ! Local variables
+  real, dimension(SZI_(G),SZJ_(G)) :: BL_layers ! Stores number of layers in boundary layer
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)) :: h_work ! Used so that h can be modified
-  real :: sfc_val  ! The surface value for the tracers.
+  real :: young_val  ! The "young" value for the tracers.
   real :: Isecs_per_year  ! The inverse of the amount of time in a year [T-1 ~> s-1]
   real :: year            ! The time in years.
-  integer :: i, j, k, is, ie, js, je, nz, m
+  real :: layer_frac
+  integer :: i, j, k, is, ie, js, je, nz, m, nk
+  character(len=255) :: msg
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  if (CS%use_real_BL_depth .and. .not. present(Hbl)) then
+    call MOM_error(FATAL,"Attempting to use real boundary layer depth for ideal age tracers, &
+         but no valid boundary layer scheme was found")
+  endif
+
+  if (CS%use_real_BL_depth .and. present(Hbl)) then
+    call count_BL_layers(G, GV, h_old, Hbl, BL_layers)
+  endif
 
   if (.not.associated(CS)) return
   if (CS%ntr < 1) return
@@ -343,40 +374,133 @@ subroutine ideal_age_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, 
   year = US%s_to_T*time_type_to_real(CS%Time) * Isecs_per_year
 
   do m=1,CS%ntr
-    if (CS%sfc_growth_rate(m) == 0.0) then
-      sfc_val = CS%young_val(m)
+
+    if (CS%growth_rate(m) == 0.0) then
+      young_val = CS%young_val(m)
     else
-      sfc_val = CS%young_val(m) * &
-          exp((year-CS%tracer_start_year(m)) * CS%sfc_growth_rate(m))
+      young_val = CS%young_val(m) * &
+          exp((year-CS%tracer_start_year(m)) * CS%growth_rate(m))
     endif
-    do k=1,CS%nkml ; do j=js,je ; do i=is,ie
-      if (G%mask2dT(i,j) > 0.5) then
-        CS%tr(i,j,k,m) = sfc_val
-      else
-        CS%tr(i,j,k,m) = CS%land_val(m)
-      endif
-    enddo ; enddo ; enddo
-  enddo
-  do m=1,CS%ntr ; if (CS%tracer_ages(m) .and. &
-                      (year>=CS%tracer_start_year(m))) then
-!$OMP parallel do default(none) shared(is,ie,js,je,CS,nz,G,dt,Isecs_per_year,m)
-    do k=CS%nkml+1,nz ; do j=js,je ; do i=is,ie
-      CS%tr(i,j,k,m) = CS%tr(i,j,k,m) + G%mask2dT(i,j)*dt*Isecs_per_year
-    enddo ; enddo ; enddo
-  endif ; enddo
+
+    if (m == CS%BL_residence_num) then
+
+      if (CS%use_real_BL_depth) then
+        do j=js,je ; do i=is,ie
+          nk = floor(BL_layers(i,j))
+
+          do k=1,nk
+            if (G%mask2dT(i,j) > 0.0) then
+              CS%tr(i,j,k,m) = CS%tr(i,j,k,m) + G%mask2dT(i,j)*dt*Isecs_per_year
+            else
+              CS%tr(i,j,k,m) = CS%land_val(m)
+            endif
+          enddo
+
+          k = MIN(nk+1,nz)
+
+          if (G%mask2dT(i,j) > 0.0) then
+            layer_frac = BL_layers(i,j)-nk
+            CS%tr(i,j,k,m) = layer_frac * (CS%tr(i,j,k,m) + G%mask2dT(i,j)*dt &
+                             *Isecs_per_year) + (1.-layer_frac) * young_val
+          else
+            CS%tr(i,j,k,m) = CS%land_val(m)
+          endif
+
+
+          do k=nk+2,nz
+            if (G%mask2dT(i,j) > 0.0) then
+              CS%tr(i,j,k,m) = young_val
+            else
+              CS%tr(i,j,k,m) = CS%land_val(m)
+            endif
+          enddo
+       enddo ; enddo
+
+      else  ! use real BL depth
+        do j=js,je ; do i=is,ie
+          do k=1,CS%nkbl
+            if (G%mask2dT(i,j) > 0.0) then
+              CS%tr(i,j,k,m) = CS%tr(i,j,k,m) + G%mask2dT(i,j)*dt*Isecs_per_year
+            else
+              CS%tr(i,j,k,m) = CS%land_val(m)
+            endif
+          enddo
+
+          do k=CS%nkbl+1,nz
+            if (G%mask2dT(i,j) > 0.0) then
+              CS%tr(i,j,k,m) = young_val
+            else
+              CS%tr(i,j,k,m) = CS%land_val(m)
+            endif
+          enddo
+        enddo ; enddo
+
+     endif ! use real BL depth
+
+    else ! if BL residence tracer
+
+      if (CS%use_real_BL_depth) then
+        do j=js,je ; do i=is,ie
+          nk = floor(BL_layers(i,j))
+          do k=1,nk
+            if (G%mask2dT(i,j) > 0.0) then
+              CS%tr(i,j,k,m) = young_val
+            else
+              CS%tr(i,j,k,m) = CS%land_val(m)
+            endif
+          enddo
+
+          k = MIN(nk+1,nz)
+          if (G%mask2dT(i,j) > 0.0) then
+            layer_frac = BL_layers(i,j)-nk
+            CS%tr(i,j,k,m) = (1.-layer_frac) * (CS%tr(i,j,k,m) + G%mask2dT(i,j)*dt &
+                             *Isecs_per_year) + layer_frac * young_val
+          else
+            CS%tr(i,j,k,m) = CS%land_val(m)
+          endif
+
+          do k=nk+2,nz
+            if (G%mask2dT(i,j) > 0.0) then
+              CS%tr(i,j,k,m) = CS%tr(i,j,k,m) + G%mask2dT(i,j)*dt*Isecs_per_year
+            else
+              CS%tr(i,j,k,m) = CS%land_val(m)
+            endif
+          enddo
+        enddo ; enddo
+
+      else ! use real BL depth
+        do k=1,CS%nkbl ; do j=js,je ; do i=is,ie
+          if (G%mask2dT(i,j) > 0.0) then
+            CS%tr(i,j,k,m) = young_val
+          else
+            CS%tr(i,j,k,m) = CS%land_val(m)
+          endif
+        enddo ; enddo ; enddo
+
+        if (CS%tracer_ages(m) .and. (year>=CS%tracer_start_year(m))) then
+          !$OMP parallel do default(none) shared(is,ie,js,je,CS,nz,G,dt,Isecs_per_year,m)
+          do k=CS%nkbl+1,nz ; do j=js,je ; do i=is,ie
+            CS%tr(i,j,k,m) = CS%tr(i,j,k,m) + G%mask2dT(i,j)*dt*Isecs_per_year
+          enddo ; enddo ; enddo
+        endif
+
+
+      endif ! if use real BL depth
+    endif ! if BL residence tracer
+
+  enddo ! loop over all tracers
 
 end subroutine ideal_age_tracer_column_physics
 
 !> Calculates the mass-weighted integral of all tracer stocks, returning the number of stocks it
 !! has calculated.  If stock_index is present, only the stock corresponding to that coded index is found.
-function ideal_age_stock(h, stocks, G, GV, US, CS, names, units, stock_index)
+function ideal_age_stock(h, stocks, G, GV, CS, names, units, stock_index)
   type(ocean_grid_type),              intent(in)    :: G    !< The ocean's grid structure
   type(verticalGrid_type),            intent(in)    :: GV   !< The ocean's vertical grid structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                                       intent(in)    :: h    !< Layer thicknesses [H ~> m or kg m-2]
-  real, dimension(:),                 intent(out)   :: stocks !< the mass-weighted integrated amount of each
+  type(EFP_type), dimension(:),       intent(out)   :: stocks !< the mass-weighted integrated amount of each
                                                             !! tracer, in kg times concentration units [kg conc].
-  type(unit_scale_type),              intent(in)    :: US   !< A dimensional unit scaling type
   type(ideal_age_tracer_CS),          pointer       :: CS   !< The control structure returned by a previous
                                                             !! call to register_ideal_age_tracer.
   character(len=*), dimension(:),     intent(out)   :: names  !< the names of the stocks calculated.
@@ -386,9 +510,7 @@ function ideal_age_stock(h, stocks, G, GV, US, CS, names, units, stock_index)
   integer                                           :: ideal_age_stock !< The number of stocks calculated here.
 
   ! Local variables
-  real :: stock_scale ! The dimensional scaling factor to convert stocks to kg [kg H-1 L-2 ~> kg m-3 or 1]
-  integer :: i, j, k, is, ie, js, je, nz, m
-  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+  integer :: m
 
   ideal_age_stock = 0
   if (.not.associated(CS)) return
@@ -401,15 +523,10 @@ function ideal_age_stock(h, stocks, G, GV, US, CS, names, units, stock_index)
     return
   endif ; endif
 
-  stock_scale = US%L_to_m**2 * GV%H_to_kg_m2
   do m=1,CS%ntr
     call query_vardesc(CS%tr_desc(m), name=names(m), units=units(m), caller="ideal_age_stock")
     units(m) = trim(units(m))//" kg"
-    stocks(m) = 0.0
-    do k=1,nz ; do j=js,je ; do i=is,ie
-      stocks(m) = stocks(m) + CS%tr(i,j,k,m) * (G%mask2dT(i,j) * G%areaT(i,j) * h(i,j,k))
-    enddo ; enddo ; enddo
-    stocks(m) = stock_scale * stocks(m)
+    stocks(m) = global_mass_int_EFP(h, G, GV, CS%tr(:,:,:,m), on_PE_only=.true.)
   enddo
   ideal_age_stock = CS%ntr
 
@@ -453,13 +570,41 @@ subroutine ideal_age_example_end(CS)
   type(ideal_age_tracer_CS), pointer :: CS !< The control structure returned by a previous
                                            !! call to register_ideal_age_tracer.
 
-  integer :: m
-
   if (associated(CS)) then
     if (associated(CS%tr)) deallocate(CS%tr)
     deallocate(CS)
   endif
 end subroutine ideal_age_example_end
+
+subroutine count_BL_layers(G, GV, h, Hbl, BL_layers)
+  type(ocean_grid_type),   intent(in) :: G    !< The ocean's grid structure
+  type(verticalGrid_type), intent(in) :: GV   !< The ocean's vertical grid structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(in) :: h !< Layer thicknesses [H ~> m or kg m-2].
+  real, dimension(SZI_(G),SZJ_(G)), intent(in) :: Hbl !< Boundary layer depth [Z ~> m]
+  real, dimension(SZI_(G),SZJ_(G)), intent(out) :: BL_layers !< Number of model layers in the boundary layer
+
+  real :: current_depth
+  integer :: i, j, k, is, ie, js, je, nz, m, nk
+  character(len=255) :: msg
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+
+  BL_layers(:,:) = 0.
+  do j=js,je ; do i=is,ie
+
+    current_depth = 0.
+    do k=1,nz
+      current_depth = current_depth + h(i,j,k)*GV%H_to_Z
+      if (Hbl(i,j) <= current_depth) then
+        BL_layers(i,j) = BL_layers(i,j) + (1.0 - (current_depth - Hbl(i,j)) / (h(i,j,k)*GV%H_to_Z))
+        exit
+      else
+        BL_layers(i,j) = BL_layers(i,j) + 1.0
+      endif
+    enddo
+  enddo ; enddo
+
+end subroutine count_BL_layers
 
 !> \namespace ideal_age_example
 !!

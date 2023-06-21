@@ -14,12 +14,12 @@ use MOM_grid,                only : ocean_grid_type
 use MOM_variables,           only : thermo_var_ptrs
 use MOM_domains,             only : pass_var, pass_vector
 use MOM_verticalGrid,        only : verticalGrid_type
-use MOM_error_handler,       only : MOM_error, FATAL, WARNING, is_root_pe
+use MOM_error_handler,       only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_error_handler,       only : callTree_enter, callTree_leave
 use MOM_file_parser,         only : get_param, log_version, close_param_file, param_file_type
 use mpp_domains_mod,         only : domain2d, mpp_get_layout, mpp_get_global_domain
 use mpp_domains_mod,         only : mpp_define_domains, mpp_get_compute_domain, mpp_get_data_domain
-use MOM_domains,             only : root_PE,num_PEs
+use MOM_domains,             only : root_PE, num_PEs
 use MOM_coms,                only : Get_PElist
 use MOM_EOS,                 only : calculate_density, EOS_domain
 use stochastic_physics,      only : init_stochastic_physics_ocn, run_stochastic_physics_ocn
@@ -40,10 +40,10 @@ type, public:: stochastic_CS
   integer :: id_skebu     = -1 !< Diagnostic id for SKEB
   integer :: id_skebv     = -1 !< Diagnostic id for SKEB
   integer :: id_diss      = -1 !< Diagnostic id for SKEB
-  integer :: skeb_npass  = -1 !< number of passes of the 9-point smoother for the dissipation estimate
+  integer :: skeb_npass   = -1 !< number of passes of the 9-point smoother for the dissipation estimate
   integer :: id_psi       = -1 !< Diagnostic id for SPPT
-  integer :: id_epbl1_wts=-1 !< Diagnostic id for epbl generation perturbation
-  integer :: id_epbl2_wts=-1 !< Diagnostic id for epbl dissipation perturbation
+  integer :: id_epbl1_wts = -1 !< Diagnostic id for epbl generation perturbation
+  integer :: id_epbl2_wts = -1 !< Diagnostic id for epbl dissipation perturbation
   ! stochastic patterns
   real, allocatable :: sppt_wts(:,:)  !< Random pattern for ocean SPPT
                                      !! tendencies with a number between 0 and 2
@@ -58,25 +58,25 @@ contains
 
 !!   This subroutine initializes the stochastics physics control structure.
 subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
-  real, intent(in)                     :: dt       !< time step [T ~> s]
-  type(ocean_grid_type),   intent(in)  :: grid     !< horizontal grid information
-  type(verticalGrid_type), intent(in)  :: GV       !< vertical grid structure
-  type(stochastic_CS), pointer,     intent(inout):: CS !< stochastic control structure
+  real, intent(in)                       :: dt      !< time step [T ~> s]
+  type(ocean_grid_type),   intent(in)    :: grid    !< horizontal grid information
+  type(verticalGrid_type), intent(in)    :: GV      !< vertical grid structure
+  type(stochastic_CS), pointer, intent(inout) :: CS !< stochastic control structure
   type(param_file_type),   intent(in)    :: param_file !< A structure to parse for run-time parameters
-  type(diag_ctrl), target, intent(inout) :: diag             !< structure to regulate diagnostic output
-  type(time_type), target                :: Time             !< model time
+  type(diag_ctrl), target, intent(inout) :: diag    !< structure to regulate diagnostic output
+  type(time_type), target                :: Time    !< model time
+
   ! Local variables
-  integer,allocatable :: pelist(:) ! list of pes for this instance of the ocean
+  integer, allocatable :: pelist(:) ! list of pes for this instance of the ocean
   integer :: mom_comm          ! list of pes for this instance of the ocean
   integer :: num_procs         ! number of processors to pass to stochastic physics
   integer :: iret              ! return code from stochastic physics
-  integer :: me                !  my pe
   integer :: pe_zero           !  root pe
   integer :: nx                ! number of x-points including halo
   integer :: ny                ! number of x-points including halo
 
-! This include declares and sets the variable "version".
-#include "version_variable.h"
+  ! This include declares and sets the variable "version".
+# include "version_variable.h"
   character(len=40)  :: mdl = "ocean_stochastics_init"  ! This module's name.
 
   call callTree_enter("ocean_model_stochastic_init(), MOM_stochastics.F90")
@@ -92,7 +92,7 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
 
-! get number of processors and PE list for stocasthci physics initialization
+  ! get number of processors and PE list for stochastic physics initialization
   call get_param(param_file, mdl, "DO_SPPT", CS%do_sppt, &
                  "If true, then stochastically perturb the thermodynamic "//&
                  "tendencies of T,S, amd h.  Amplitude and correlations are "//&
@@ -110,11 +110,12 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
                  "production and dissipation terms.  Amplitude and correlations are "//&
                  "controlled by the nam_stoch namelist in the UFS model only.", &
                  default=.false.)
+
   if (CS%do_sppt .OR. CS%pert_epbl .OR. CS%do_skeb) then
-     num_procs=num_PEs()
+     num_procs = num_PEs()
      allocate(pelist(num_procs))
      call Get_PElist(pelist,commID = mom_comm)
-     pe_zero=root_PE()
+     pe_zero = root_PE()
      nx = grid%ied - grid%isd + 1
      ny = grid%jed - grid%jsd + 1
      call init_stochastic_physics_ocn(dt,grid%geoLonT,grid%geoLatT,nx,ny,GV%ke, &
@@ -148,11 +149,11 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
   CS%id_psi  = register_diag_field('ocean_model', 'psi', CS%diag%axesTL, Time, &
        'stream function', 'None')
 
-  if (is_root_pe()) &
-    write(*,'(/12x,a/)') '=== COMPLETED MOM STOCHASTIC INITIALIZATION ====='
+  if (CS%do_sppt .OR. CS%pert_epbl) &
+    call MOM_mesg('            === COMPLETED MOM STOCHASTIC INITIALIZATION =====')
 
   call callTree_leave("ocean_model_init(")
-  return
+
 end subroutine stochastics_init
 
 !> update_ocean_model uses the forcing in Ice_ocean_boundary to advance the

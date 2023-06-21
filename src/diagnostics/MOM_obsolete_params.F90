@@ -23,8 +23,8 @@ subroutine find_obsolete_params(param_file)
   character(len=40)  :: mdl = "find_obsolete_params" ! This module's name.
 ! This include declares and sets the variable "version".
 #include "version_variable.h"
-  integer :: test_int, l_seg, nseg
-  logical :: test_logic, test_logic2, test_logic3, split
+  integer :: l_seg, nseg
+  logical :: test_logic, split
   character(len=40)  :: temp_string
 
   if (.not.is_root_pe()) return
@@ -71,6 +71,7 @@ subroutine find_obsolete_params(param_file)
 
   call obsolete_real(param_file, "VSTAR_SCALE_COEF")
   call obsolete_real(param_file, "ZSTAR_RIGID_SURFACE_THRESHOLD")
+  call obsolete_logical(param_file, "HENYEY_IGW_BACKGROUND_NEW")
 
   ! Test for inconsistent parameter settings.
   split = .true. ; test_logic = .false.
@@ -84,6 +85,8 @@ subroutine find_obsolete_params(param_file)
   call obsolete_real(param_file, "BT_MASS_SOURCE_LIMIT", 0.0)
 
   call obsolete_int(param_file, "SEAMOUNT_LENGTH_SCALE", hint="Use SEAMOUNT_X_LENGTH_SCALE instead.")
+  call obsolete_int(param_file, "USE_LATERAL_BOUNDARY_DIFFUSION", &
+                    hint="Use USE_HORIZONTAL_BOUNDARY_DIFFUSION instead.")
 
   call obsolete_logical(param_file, "MSTAR_FIXED", hint="Instead use MSTAR_MODE.")
   call obsolete_logical(param_file, "USE_VISBECK_SLOPE_BUG", .false.)
@@ -92,6 +95,11 @@ subroutine find_obsolete_params(param_file)
   call obsolete_logical(param_file, "LARGE_FILE_SUPPORT", .true.)
   call obsolete_real(param_file, "MIN_Z_DIAG_INTERVAL")
   call obsolete_char(param_file, "Z_OUTPUT_GRID_FILE")
+
+  ! This parameter is on the to-do list to be obsoleted.
+  ! call obsolete_logical(param_file, "NEW_SPONGES", hint="Use INTERPOLATE_SPONGE_TIME_SPACE instead.")
+
+  call obsolete_logical(param_file, "SMOOTH_RI", hint="Instead use N_SMOOTH_RI.")
 
   ! Write the file version number to the model log.
   call log_version(param_file, mdl, version)
