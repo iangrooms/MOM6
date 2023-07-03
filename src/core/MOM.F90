@@ -1530,7 +1530,8 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
       if (showCallTree) call callTree_waypoint("new grid generated")
       ! Remap all variables from the old grid h onto the new grid h_new
       call ALE_remap_tracers(CS%ALE_CSp, G, GV, h, h_new, CS%tracer_Reg, showCallTree, dtdia, PCM_cell)
-      call ALE_remap_velocities(CS%ALE_CSp, G, GV, h, h_new, u, v, CS%OBC, dzRegrid, showCallTree, dtdia)
+      call ALE_remap_velocities(CS%ALE_CSp, G, GV, h, h_new, u, v, CS%OBC, dzRegrid, showCallTree, dtdia, &
+                                allow_preserve_variance=.true.)
 
       ! Replace the old grid with new one.  All remapping must be done by this point in the code.
       !$OMP parallel do default(shared)
