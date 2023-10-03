@@ -692,6 +692,10 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
                 dudy(I,J) = CS%DX_dyBu(I,J)*OBC%segment(n)%tangential_grad(I,J,k)*G%IdxCu(I,j+1)*G%dxBu(I,J)
               endif
             endif
+            if (CS%use_Leithy) then
+              dvdx_smooth(I,J) = dvdx(I,J)
+              dudy_smooth(I,J) = dudy(I,J)
+            endif
           enddo
         elseif (OBC%segment(n)%is_E_or_W .and. (I >= is-2) .and. (I <= Ieq+1)) then
           do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
@@ -713,6 +717,10 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
               else
                 dvdx(I,J) = CS%DY_dxBu(I,J)*OBC%segment(n)%tangential_grad(I,J,k)*G%IdyCv(i+1,J)*G%dxBu(I,J)
               endif
+            endif
+            if (CS%use_Leithy) then
+              dvdx_smooth(I,J) = dvdx(I,J)
+              dudy_smooth(I,J) = dudy(I,J)
             endif
           enddo
         endif
