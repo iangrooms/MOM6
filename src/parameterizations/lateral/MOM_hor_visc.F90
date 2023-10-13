@@ -297,8 +297,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     dudx, dvdy, &    ! components in the horizontal tension [T-1 ~> s-1]
     dudx_smooth, dvdy_smooth, & ! components in the horizontal tension from smoothed velocity [T-1 ~> s-1]
     GME_effic_h, &  ! The filtered efficiency of the GME terms at h points [nondim]
-    htot, &       ! The total thickness of all layers [Z ~> m]
-    m_leithy      ! Kh=m_leithy*Ah in Leith+E parameterization [L-2 ~> m-2]
+    htot          ! The total thickness of all layers [Z ~> m]
   real :: Del2vort_h ! Laplacian of vorticity at h-points [L-2 T-1 ~> m-2 s-1]
   real :: grad_vel_mag_bt_h ! Magnitude of the barotropic velocity gradient tensor squared at h-points [T-2 ~> s-2]
   real :: boundary_mask_h ! A mask that zeroes out cells with at least one land edge [nondim]
@@ -321,9 +320,10 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     grad_vort_mag_q_2d, & ! Magnitude of 2d vorticity gradient at q-points [L-1 T-1 ~> m-1 s-1]
     Del2vort_q, & ! Laplacian of vorticity at q-points [L-2 T-1 ~> m-2 s-1]
     grad_div_mag_q, &  ! Magnitude of divergence gradient at q-points [L-1 T-1 ~> m-1 s-1]
-    hq, &         ! harmonic mean of the harmonic means of the u- & v point thicknesses [H ~> m or kg m-2]
-                  ! This form guarantees that hq/hu < 4.
-    GME_effic_q   ! The filtered efficiency of the GME terms at q points [nondim]
+    hq, &          ! harmonic mean of the harmonic means of the u- & v point thicknesses [H ~> m or kg m-2]
+                   ! This form guarantees that hq/hu < 4.
+    GME_effic_q, & ! The filtered efficiency of the GME terms at q points [nondim]
+    m_leithy       ! Kh=m_leithy*Ah in Leith+E parameterization [L-2 ~> m-2]
   real :: grad_vel_mag_bt_q ! Magnitude of the barotropic velocity gradient tensor squared at q-points [T-2 ~> s-2]
   real :: boundary_mask_q ! A mask that zeroes out cells with at least one land edge [nondim]
 
@@ -427,8 +427,6 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
   inv_PI3 = 1.0/((4.0*atan(1.0))**3)
   inv_PI2 = 1.0/((4.0*atan(1.0))**2)
   inv_PI6 = inv_PI3 * inv_PI3
-
-  m_leithy(:,:) = 0. ! Initialize
 
   if (present(OBC)) then ; if (associated(OBC)) then ; if (OBC%OBC_pe) then
     apply_OBC = OBC%Flather_u_BCs_exist_globally .or. OBC%Flather_v_BCs_exist_globally
@@ -614,13 +612,17 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       dvdx(I,J) = CS%DY_dxBu(I,J)*(v(i+1,J,k)*G%IdyCv(i+1,J) - v(i,J,k)*G%IdyCv(i,J))
       dudy(I,J) = CS%DX_dyBu(I,J)*(u(I,j+1,k)*G%IdxCu(I,j+1) - u(I,j,k)*G%IdxCu(I,j))
     enddo ; enddo
+    if ((CS%Leith_Ah) .or. (CS%use_Leithy)) then
+      call pass_var(dvdx, G%Domain, halo=2, position=CORNER)
+      call pass_var(dudy, G%Domain, halo=2, position=CORNER)
+    endif
 
     if (CS%use_Leithy) then
       ! Smooth the velocity. Right now it happens twice. In the future
       ! one might make the number of smoothing cycles a user-specified parameter
       u_smooth(:,:) = u(:,:,k)
       v_smooth(:,:) = v(:,:,k)
-      call smooth_x9(CS, G, field_u=u_smooth,field_v=v_smooth) ! one call applies the filter twice
+      call smooth_x9(CS, G, field_u=u_smooth, field_v=v_smooth) ! one call applies the filter twice
       ! Calculate horizontal tension from smoothed velocity
       do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
         dudx_smooth(i,j) = CS%DY_dxT(i,j)*(G%IdyCu(I,j) * u_smooth(I,j) - &
@@ -631,13 +633,15 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       enddo ; enddo
 
       ! Components for the shearing strain from smoothed velocity
-      do J=Jsq-2,Jeq+2 ; do I=Isq-2,Ieq+2
+      do J=Jsq,Jeq ; do I=Isq,Ieq
         dvdx_smooth(I,J) = CS%DY_dxBu(I,J) * &
                          (v_smooth(i+1,J)*G%IdyCv(i+1,J) - v_smooth(i,J)*G%IdyCv(i,J))
         dudy_smooth(I,J) = CS%DX_dyBu(I,J) * &
                          (u_smooth(I,j+1)*G%IdxCu(I,j+1) - u_smooth(I,j)*G%IdxCu(I,j))
       enddo ; enddo
-    end if ! use Leith+E
+      call pass_var(dvdx_smooth, G%Domain, halo=2, position=CORNER)
+      call pass_var(dudy_smooth, G%Domain, halo=2, position=CORNER)
+    endif ! use Leith+E
 
     if (CS%id_normstress > 0) then
       do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
@@ -845,11 +849,11 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
     if (CS%use_Leithy) then
       if (CS%no_slip) then
-        do J=Jsq-2,Jeq+2 ; do I=Isq-2,Ieq+2
+        do J=Jsq-2,Jeq+1 ; do I=Isq-2,Ieq+1
           vort_xy_smooth(I,J) = (2.0-G%mask2dBu(I,J)) * ( dvdx_smooth(I,J) - dudy_smooth(I,J) )
         enddo ; enddo
       else
-        do J=Jsq-2,Jeq+2 ; do I=Isq-2,Ieq+2
+        do J=Jsq-2,Jeq+1 ; do I=Isq-2,Ieq+1
           vort_xy_smooth(I,J) = G%mask2dBu(I,J) * ( dvdx_smooth(I,J) - dudy_smooth(I,J) )
         enddo ; enddo
       endif
@@ -863,12 +867,12 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     if ((CS%Leith_Kh) .or. (CS%Leith_Ah) .or. (CS%use_Leithy)) then
 
       ! Vorticity gradient
-      do J=Jsq-1,Jeq+1 ; do i=Isq-1,Ieq+2
+      do J=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
         DY_dxBu = G%dyBu(I,J) * G%IdxBu(I,J)
         vort_xy_dx(i,J) = DY_dxBu * (vort_xy(I,J) * G%IdyCu(I,j) - vort_xy(I-1,J) * G%IdyCu(I-1,j))
       enddo ; enddo
 
-      do j=Jsq-1,Jeq+2 ; do I=Isq-1,Ieq+1
+      do j=Jsq-1,Jeq+2 ; do I=Isq-1,Ieq+2
         DX_dyBu = G%dxBu(I,J) * G%IdyBu(I,J)
         vort_xy_dy(I,j) = DX_dyBu * (vort_xy(I,J) * G%IdxCv(i,J) - vort_xy(I,J-1) * G%IdxCv(i,J-1))
       enddo ; enddo
@@ -1008,7 +1012,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       ! largest value from several parameterizations. Also get
       ! the Laplacian component of str_xx.
 
-      if ((CS%Leith_Kh) .or. (CS%Leith_Ah)) then
+      if ((CS%Leith_Kh) .or. (CS%Leith_Ah) .or. (CS%use_Leithy)) then
         if (CS%use_QG_Leith_visc) then
           do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
             grad_vort = grad_vort_mag_h(i,j) + grad_div_mag_h(i,j)
@@ -1198,7 +1202,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
             endif
           enddo ; enddo
           ! Smooth m_leithy
-          call smooth_x9(CS, G, field_h=m_leithy, zero_land=.true.)
+          call smooth_x9(CS, G, field_q=m_leithy)
           ! Get Ah
           do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
             Del2vort_h = 0.25 * ((Del2vort_q(I,J) + Del2vort_q(I-1,J-1)) + &
@@ -1210,11 +1214,11 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
           ! Smooth Ah before applying upper bound
           ! square, then smooth, then square root
           do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-            Ah_h(i,j,k) = Ah(i,j)**2
+            Ah(i,j) = Ah(i,j)**2
           enddo ; enddo
-          call smooth_x9(CS, G, field_h=Ah_h(:,:,k))
+          call smooth_x9(CS, G, field_q=Ah, zero_land=.false.)
           do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-            Ah_h(i,j,k) = sqrt(Ah_h(i,j,k))
+            Ah_h(i,j,k) = max(CS%Ah_bg_xx(i,j), sqrt(max(0., Ah(i,j))))
             Ah(i,j)     = Ah_h(i,j,k)
           enddo ; enddo
         endif
@@ -1265,6 +1269,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
             Kh(i,j) = -m_leithy(i,j) * Ah(i,j)
             Kh_h(i,j,k) = Kh(i,j)
         enddo ; enddo
+        call pass_var(Kh_h(:,:,k), G%Domain, halo=2)
       endif
 
       if (CS%id_grid_Re_Ah>0) then
@@ -1462,7 +1467,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
         ! Leith+E doesn't recompute Kh at q points, it just interpolates it from h to q points
         if (CS%use_Leithy) then
-          Kh(I,J) = Kh_h(i+1,j+1,k)
+          Kh(I,J) = Kh_h(i,j,k)
         end if
 
         if (CS%id_Kh_q>0 .or. CS%debug) &
@@ -1568,8 +1573,9 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
       ! Leith+E doesn't recompute Ah at q points, it just interpolates it from h to q points
       if (CS%use_Leithy) then
+        call pass_var(Ah_h(:,:,k), G%Domain, halo=2)
         do J=js-1,Jeq ; do I=is-1,Ieq
-           Ah(I,J) = Ah_h(i+1,j+1,k)
+           Ah(I,J) = Ah_h(i,j,k)
         enddo ; enddo
       end if
 
@@ -2877,9 +2883,9 @@ subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
                                                               !! at q points
   logical, optional, intent(in)                               :: zero_land !< An optional argument
                                                               !! indicating whether to set values
-                                                              !! on land to zero (.true.) or
-                                                              !! whether to ignore land values
-                                                              !! (.false. or not present)
+                                                              !! on land to zero (not present or
+                                                              !! .true.) or whether to ignore land
+                                                              !!  values (.false.)
   ! local variables. It would be good to make the _original variables allocatable.
   real, dimension(SZI_(G),SZJ_(G))   :: field_h_original
   real, dimension(SZIB_(G),SZJ_(G))  :: field_u_original
@@ -2899,7 +2905,7 @@ subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
   if (present(zero_land)) then
     zero_land_val = zero_land
   else
-    zero_land_val = .false.
+    zero_land_val = .true.
   endif
 
   if (present(field_h)) then
@@ -2912,7 +2918,7 @@ subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
         if (G%mask2dT(i,j)==0.) cycle
         ! compute local weights
         local_weights = weights*G%mask2dT(i-1:i+1,j-1:j+1)
-        if (zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
+        if (.not. zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
         field_h(i,j) =  sum(local_weights*field_h_original(i-1:i+1,j-1:j+1))
       enddo ; enddo
     enddo
@@ -2929,7 +2935,7 @@ subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
         if (G%mask2dCu(I,j)==0.) cycle
         ! compute local weights
         local_weights = weights*G%mask2dCu(I-1:I+1,j-1:j+1)
-        if (zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
+        if (.not. zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
         field_u(I,j) =  sum(local_weights*field_u_original(I-1:I+1,j-1:j+1))
       enddo ; enddo
 
@@ -2940,7 +2946,7 @@ subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
         if (G%mask2dCv(i,J)==0.) cycle
         ! compute local weights
         local_weights = weights*G%mask2dCv(i-1:i+1,J-1:J+1)
-        if (zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
+        if (.not. zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
         field_v(i,J) =  sum(local_weights*field_v_original(i-1:i+1,J-1:J+1))
       enddo ; enddo
     enddo
@@ -2957,7 +2963,7 @@ subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
         if (G%mask2dBu(I,J)==0.) cycle
         ! compute local weights
         local_weights = weights*G%mask2dBu(I-1:I+1,J-1:J+1)
-        if (zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
+        if (.not. zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
         field_q(I,J) =  sum(local_weights*field_q_original(I-1:I+1,J-1:J+1))
       enddo ; enddo
     enddo
