@@ -1256,7 +1256,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
         endif
       endif
 
-      if ((CS%id_Ah_h>0) .or. CS%debug) then
+      if ((CS%id_Ah_h>0) .or. CS%debug .or. CS%use_Leithy) then
         do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
           Ah_h(i,j,k) = Ah(i,j)
         enddo ; enddo
