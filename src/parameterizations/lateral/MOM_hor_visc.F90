@@ -270,16 +270,14 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     vort_xy_dy, & ! y-derivative of vertical vorticity (d/dy(dv/dx - du/dy)) [L-1 T-1 ~> m-1 s-1]
     vort_xy_dy_smooth, & ! y-derivative of smoothed vertical vorticity [L-1 T-1 ~> m-1 s-1]
     div_xx_dx, &  ! x-derivative of horizontal divergence (d/dx(du/dx + dv/dy)) [L-1 T-1 ~> m-1 s-1]
-    ubtav, &      ! zonal barotropic velocity averaged over a baroclinic time-step [L T-1 ~> m s-1]
-    u_smooth      ! Zonal velocity, smoothed with a spatial low-pass filter [L T-1 ~> m s-1]
+    ubtav         ! zonal barotropic velocity averaged over a baroclinic time-step [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJB_(G)) :: &
     Del2v, &      ! The v-component of the Laplacian of velocity [L-1 T-1 ~> m-1 s-1]
     h_v, &        ! Thickness interpolated to v points [H ~> m or kg m-2].
     vort_xy_dx, & ! x-derivative of vertical vorticity (d/dx(dv/dx - du/dy)) [L-1 T-1 ~> m-1 s-1]
     vort_xy_dx_smooth, & ! x-derivative of smoothed vertical vorticity [L-1 T-1 ~> m-1 s-1]
     div_xx_dy, &  ! y-derivative of horizontal divergence (d/dy(du/dx + dv/dy)) [L-1 T-1 ~> m-1 s-1]
-    vbtav, &      ! meridional barotropic velocity averaged over a baroclinic time-step [L T-1 ~> m s-1]
-    v_smooth      ! Meridional velocity, smoothed with a spatial low-pass filter [L T-1 ~> m s-1]
+    vbtav         ! meridional barotropic velocity averaged over a baroclinic time-step [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJ_(G)) :: &
     dudx_bt, dvdy_bt, & ! components in the barotropic horizontal tension [T-1 ~> s-1]
     div_xx, &     ! Estimate of horizontal divergence at h-points [T-1 ~> s-1]
@@ -353,10 +351,12 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
   ! Zanna-Bolton fields
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: &
+    u_smooth, &       ! Zonal velocity, smoothed with a spatial low-pass filter [L T-1 ~> m s-1]
     ZB2020u           !< Zonal acceleration due to convergence of
                       !! along-coordinate stress tensor for ZB model
                       !! [L T-2 ~> m s-2]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: &
+    v_smooth, &       ! Meridional velocity, smoothed with a spatial low-pass filter [L T-1 ~> m s-1]
     ZB2020v           !< Meridional acceleration due to convergence
                       !! of along-coordinate stress tensor for ZB model
                       !! [L T-2 ~> m s-2]
@@ -555,12 +555,24 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
   endif ! use_GME
 
+  if (CS%use_Leithy) then
+    ! Smooth the velocity. Right now it happens twice. In the future
+    ! one might make the number of smoothing cycles a user-specified parameter
+    do k=1,nz
+      ! One call applies the filter twice
+      u_smooth(:,:,k) = u(:,:,k)
+      v_smooth(:,:,k) = v(:,:,k)
+      call smooth_x9(G, field_u=u_smooth(:,:,k), field_v=v_smooth(:,:,k), zero_land=.false.)
+    enddo
+    call pass_vector(u_smooth, v_smooth, G%Domain)
+  endif
+ 
   !$OMP parallel do default(none) &
   !$OMP shared( &
   !$OMP   CS, G, GV, US, OBC, VarMix, MEKE, u, v, h, &
   !$OMP   is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz, &
   !$OMP   apply_OBC, rescale_Kh, legacy_bound, find_FrictWork, &
-  !$OMP   use_MEKE_Ku, use_MEKE_Au, &
+  !$OMP   use_MEKE_Ku, use_MEKE_Au, u_smooth, v_smooth, &
   !$OMP   backscat_subround, GME_effic_h, GME_effic_q, &
   !$OMP   h_neglect, h_neglect3, inv_PI3, inv_PI6, &
   !$OMP   diffu, diffv, Kh_h, Kh_q, Ah_h, Ah_q, FrictWork, FrictWork_GME, &
@@ -583,7 +595,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
   !$OMP   h2uq, h2vq, hu, hv, hq, FatH, RoScl, GME_coeff, &
   !$OMP   dudx_smooth, dudy_smooth, dvdx_smooth, dvdy_smooth, &
   !$OMP   vort_xy_smooth, vort_xy_dx_smooth, vort_xy_dy_smooth, &
-  !$OMP   sh_xx_smooth, sh_xy_smooth, u_smooth, v_smooth, &
+  !$OMP   sh_xx_smooth, sh_xy_smooth, &
   !$OMP   vert_vort_mag_smooth, m_leithy, AhLthy &
   !$OMP )
   do k=1,nz
@@ -618,26 +630,21 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     endif
 
     if (CS%use_Leithy) then
-      ! Smooth the velocity. Right now it happens twice. In the future
-      ! one might make the number of smoothing cycles a user-specified parameter
-      u_smooth(:,:) = u(:,:,k)
-      v_smooth(:,:) = v(:,:,k)
-      call smooth_x9(CS, G, field_u=u_smooth, field_v=v_smooth) ! one call applies the filter twice
       ! Calculate horizontal tension from smoothed velocity
       do j=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
-        dudx_smooth(i,j) = CS%DY_dxT(i,j)*(G%IdyCu(I,j) * u_smooth(I,j) - &
-                                           G%IdyCu(I-1,j) * u_smooth(I-1,j))
-        dvdy_smooth(i,j) = CS%DX_dyT(i,j)*(G%IdxCv(i,J) * v_smooth(i,J) - &
-                                           G%IdxCv(i,J-1) * v_smooth(i,J-1))
+        dudx_smooth(i,j) = CS%DY_dxT(i,j)*(G%IdyCu(I,j) * u_smooth(I,j,k) - &
+                                           G%IdyCu(I-1,j) * u_smooth(I-1,j,k))
+        dvdy_smooth(i,j) = CS%DX_dyT(i,j)*(G%IdxCv(i,J) * v_smooth(i,J,k) - &
+                                           G%IdxCv(i,J-1) * v_smooth(i,J-1,k))
         sh_xx_smooth(i,j) = dudx_smooth(i,j) - dvdy_smooth(i,j)
       enddo ; enddo
 
       ! Components for the shearing strain from smoothed velocity
       do J=Jsq,Jeq ; do I=Isq,Ieq
         dvdx_smooth(I,J) = CS%DY_dxBu(I,J) * &
-                         (v_smooth(i+1,J)*G%IdyCv(i+1,J) - v_smooth(i,J)*G%IdyCv(i,J))
+                         (v_smooth(i+1,J,k)*G%IdyCv(i+1,J) - v_smooth(i,J,k)*G%IdyCv(i,J))
         dudy_smooth(I,J) = CS%DX_dyBu(I,J) * &
-                         (u_smooth(I,j+1)*G%IdxCu(I,j+1) - u_smooth(I,j)*G%IdxCu(I,j))
+                         (u_smooth(I,j+1,k)*G%IdxCu(I,j+1) - u_smooth(I,j,k)*G%IdxCu(I,j))
       enddo ; enddo
       call pass_var(dvdx_smooth, G%Domain, halo=2, position=CORNER)
       call pass_var(dudy_smooth, G%Domain, halo=2, position=CORNER)
@@ -867,12 +874,12 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     if ((CS%Leith_Kh) .or. (CS%Leith_Ah) .or. (CS%use_Leithy)) then
 
       ! Vorticity gradient
-      do J=Jsq-1,Jeq+2 ; do i=Isq-1,Ieq+2
+      do J=Jsq-1,Jeq+1 ; do i=Isq-1,Ieq+2
         DY_dxBu = G%dyBu(I,J) * G%IdxBu(I,J)
         vort_xy_dx(i,J) = DY_dxBu * (vort_xy(I,J) * G%IdyCu(I,j) - vort_xy(I-1,J) * G%IdyCu(I-1,j))
       enddo ; enddo
 
-      do j=Jsq-1,Jeq+2 ; do I=Isq-1,Ieq+2
+      do j=Jsq-1,Jeq+2 ; do I=Isq-1,Ieq+1
         DX_dyBu = G%dxBu(I,J) * G%IdyBu(I,J)
         vort_xy_dy(I,j) = DX_dyBu * (vort_xy(I,J) * G%IdxCv(i,J) - vort_xy(I,J-1) * G%IdxCv(i,J-1))
       enddo ; enddo
@@ -1202,7 +1209,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
             endif
           enddo ; enddo
           ! Smooth m_leithy
-          call smooth_x9(CS, G, field_q=m_leithy)
+          call smooth_x9(G, field_q=m_leithy)
           ! Get Ah
           do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
             Del2vort_h = 0.25 * ((Del2vort_q(I,J) + Del2vort_q(I-1,J-1)) + &
@@ -1216,7 +1223,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
           do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
             Ah(i,j) = Ah(i,j)**2
           enddo ; enddo
-          call smooth_x9(CS, G, field_q=Ah, zero_land=.false.)
+          call smooth_x9(G, field_q=Ah, zero_land=.false.)
           do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
             Ah_h(i,j,k) = max(CS%Ah_bg_xx(i,j), sqrt(max(0., Ah(i,j))))
             Ah(i,j)     = Ah_h(i,j,k)
@@ -2870,8 +2877,7 @@ end subroutine smooth_GME
 !! in situations where you need conservation. Also can't apply it to Ah and Kh in the
 !! horizontal_viscosity subroutine because they are not supposed to be halo-updated.
 !! But you _can_ apply them to Kh_h and Ah_h.
-subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
-  type(hor_visc_CS),                            intent(in)    :: CS        !< Control structure
+subroutine smooth_x9(G, field_h, field_u, field_v, field_q, zero_land)
   type(ocean_grid_type),                        intent(in)    :: G         !< Ocean grid
   real, dimension(SZI_(G),SZJ_(G)), optional,   intent(inout) :: field_h   !< field to be smoothed
                                                               !! at h points
@@ -2926,7 +2932,6 @@ subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
   endif
 
   if (present(field_u)) then
-    call pass_vector(field_u, field_v, G%Domain, halo=2)
     do s=1,0,-1
       field_u_original(:,:) = field_u(:,:)
       ! apply smoothing on field_u
@@ -2943,14 +2948,13 @@ subroutine smooth_x9(CS, G, field_h, field_u, field_v, field_q, zero_land)
       ! apply smoothing on field_v
       do J=Jsq-s,Jeq+s ; do i=is-s,ie+s
         ! skip land points
-        if (G%mask2dCv(i,J)==0.) cycle
+        if (G%mask2dCv(i,J)==0.) cycle 
         ! compute local weights
         local_weights = weights*G%mask2dCv(i-1:i+1,J-1:J+1)
         if (.not. zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
         field_v(i,J) =  sum(local_weights*field_v_original(i-1:i+1,J-1:J+1))
       enddo ; enddo
     enddo
-    call pass_vector(field_u, field_v, G%Domain)
   endif
 
   if (present(field_q)) then
