@@ -74,6 +74,8 @@ type, public :: hor_visc_CS ; private
                              !! Ah is the background. Leithy = Leith+E
   real    :: c_K             !< Fraction of energy dissipated by the biharmonic term
                              !! that gets backscattered in the Leith+E scheme. [nondim]
+  logical :: smooth_Ah       !< If true (default), then Ah and m_leithy are smoothed.
+                             !! This smoothing requires a lot of blocking communication.
   logical :: use_QG_Leith_visc    !< If true, use QG Leith nonlinear eddy viscosity.
                              !! KH is the background value.
   logical :: bound_Coriolis  !< If true & SMAGORINSKY_AH is used, the biharmonic
@@ -566,7 +568,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
     enddo
     call pass_vector(u_smooth, v_smooth, G%Domain)
   endif
- 
+
   !$OMP parallel do default(none) &
   !$OMP shared( &
   !$OMP   CS, G, GV, US, OBC, VarMix, MEKE, u, v, h, &
@@ -1208,8 +1210,13 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
               endif
             endif
           enddo ; enddo
-          ! Smooth m_leithy
-          call smooth_x9(G, field_q=m_leithy)
+
+          if (CS%smooth_Ah) then
+            ! Smooth m_leithy. A single call smoothes twice.
+            call pass_var(m_leithy, G%Domain, halo=2, position=CORNER)
+            call smooth_x9(G, field_q=m_leithy)
+            call pass_var(m_leithy, G%Domain, position=CORNER)
+          endif
           ! Get Ah
           do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
             Del2vort_h = 0.25 * ((Del2vort_q(I,J) + Del2vort_q(I-1,J-1)) + &
@@ -1218,16 +1225,25 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
                     sqrt(max(0.,Del2vort_h**2 - m_leithy(i,j)*vert_vort_mag_smooth(i,j)**2))
             Ah(i,j) = max(CS%Ah_bg_xx(i,j), AhLthy)
           enddo ; enddo
-          ! Smooth Ah before applying upper bound
-          ! square, then smooth, then square root
-          do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-            Ah(i,j) = Ah(i,j)**2
-          enddo ; enddo
-          call smooth_x9(G, field_q=Ah, zero_land=.false.)
-          do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
-            Ah_h(i,j,k) = max(CS%Ah_bg_xx(i,j), sqrt(max(0., Ah(i,j))))
-            Ah(i,j)     = Ah_h(i,j,k)
-          enddo ; enddo
+          if (CS%smooth_Ah) then
+            ! Smooth Ah before applying upper bound
+            ! square, then smooth, then square root
+            ! A single call smoothes twice.
+            do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+              Ah(i,j) = Ah(i,j)**2
+            enddo ; enddo
+            call pass_var(Ah, G%Domain, halo=2, position=CORNER)
+            call smooth_x9(G, field_q=Ah, zero_land=.false.)
+            call pass_var(Ah, G%Domain, position=CORNER)
+            do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+              Ah_h(i,j,k) = max(CS%Ah_bg_xx(i,j), sqrt(max(0., Ah(i,j))))
+              Ah(i,j)     = Ah_h(i,j,k)
+            enddo ; enddo
+          else
+            do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+              Ah_h(i,j,k) = Ah(i,j)
+            enddo ; enddo
+          endif
         endif
 
         if (CS%bound_Ah .and. .not. CS%better_bound_Ah) then
@@ -2234,6 +2250,10 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
     call get_param(param_file, mdl, "LEITHY_CK", CS%c_K, &
                    "Fraction of biharmonic dissipation that gets backscattered, "//&
                    "in Leith+E.", units="nondim", default=1.0)
+    call get_param(param_file, mdl, "SMOOTH_AH", CS%smooth_Ah, &
+                   "If true, Ah and m_leithy are smoothed within Leith+E. This requires"//&
+                   "lots of blocking communications, which can be expensive", &
+                   default=.true., do_not_log=.not.CS%use_Leithy)
   endif
 
   if (CS%use_GME .and. .not.split) call MOM_error(FATAL,"ERROR: Currently, USE_GME = True "// &
@@ -2876,7 +2896,8 @@ end subroutine smooth_GME
 !! Note that this subroutine does not conserve mass or angular momentum, so don't use it
 !! in situations where you need conservation. Also can't apply it to Ah and Kh in the
 !! horizontal_viscosity subroutine because they are not supposed to be halo-updated.
-!! But you _can_ apply them to Kh_h and Ah_h.
+!! But you _can_ apply them to Kh_h and Ah_h. Also note that it assumes indices
+!! is-2:ie+2, js-2:je+2 are correct on input.
 subroutine smooth_x9(G, field_h, field_u, field_v, field_q, zero_land)
   type(ocean_grid_type),                        intent(in)    :: G         !< Ocean grid
   real, dimension(SZI_(G),SZJ_(G)), optional,   intent(inout) :: field_h   !< field to be smoothed
@@ -2915,7 +2936,6 @@ subroutine smooth_x9(G, field_h, field_u, field_v, field_q, zero_land)
   endif
 
   if (present(field_h)) then
-    call pass_var(field_h, G%Domain, halo=2) ! Halo size 2 ensures that you can smooth twice
     do s=1,0,-1
       field_h_original(:,:) = field_h(:,:)
       ! apply smoothing on field_h
@@ -2928,7 +2948,6 @@ subroutine smooth_x9(G, field_h, field_u, field_v, field_q, zero_land)
         field_h(i,j) =  sum(local_weights*field_h_original(i-1:i+1,j-1:j+1))
       enddo ; enddo
     enddo
-    call pass_var(field_h, G%Domain)
   endif
 
   if (present(field_u)) then
@@ -2948,7 +2967,7 @@ subroutine smooth_x9(G, field_h, field_u, field_v, field_q, zero_land)
       ! apply smoothing on field_v
       do J=Jsq-s,Jeq+s ; do i=is-s,ie+s
         ! skip land points
-        if (G%mask2dCv(i,J)==0.) cycle 
+        if (G%mask2dCv(i,J)==0.) cycle
         ! compute local weights
         local_weights = weights*G%mask2dCv(i-1:i+1,J-1:J+1)
         if (.not. zero_land_val) local_weights = local_weights/(sum(local_weights) + 1.E-16)
@@ -2958,7 +2977,6 @@ subroutine smooth_x9(G, field_h, field_u, field_v, field_q, zero_land)
   endif
 
   if (present(field_q)) then
-    call pass_var(field_q, G%Domain, halo=2, position=CORNER)
     do s=1,0,-1
       field_q_original(:,:) = field_q(:,:)
       ! apply smoothing on field_q
@@ -2971,7 +2989,6 @@ subroutine smooth_x9(G, field_h, field_u, field_v, field_q, zero_land)
         field_q(I,J) =  sum(local_weights*field_q_original(I-1:I+1,J-1:J+1))
       enddo ; enddo
     enddo
-    call pass_var(field_q, G%Domain, position=CORNER)
   endif
 
 end subroutine smooth_x9
