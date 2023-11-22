@@ -627,8 +627,8 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       dudy(I,J) = CS%DX_dyBu(I,J)*(u(I,j+1,k)*G%IdxCu(I,j+1) - u(I,j,k)*G%IdxCu(I,j))
     enddo ; enddo
     if ((CS%Leith_Ah) .or. (CS%use_Leithy)) then
-      call pass_var(dvdx, G%Domain, halo=2, position=CORNER)
-      call pass_var(dudy, G%Domain, halo=2, position=CORNER)
+      call pass_var(dvdx, G%Domain, halo=2, position=CORNER, complete=.false.)
+      call pass_var(dudy, G%Domain, halo=2, position=CORNER, complete=.true.)
     endif
 
     if (CS%use_Leithy) then
@@ -648,8 +648,8 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
         dudy_smooth(I,J) = CS%DX_dyBu(I,J) * &
                          (u_smooth(I,j+1,k)*G%IdxCu(I,j+1) - u_smooth(I,j,k)*G%IdxCu(I,j))
       enddo ; enddo
-      call pass_var(dvdx_smooth, G%Domain, halo=2, position=CORNER)
-      call pass_var(dudy_smooth, G%Domain, halo=2, position=CORNER)
+      call pass_var(dvdx_smooth, G%Domain, halo=2, position=CORNER, complete=.false.)
+      call pass_var(dudy_smooth, G%Domain, halo=2, position=CORNER, complete=.true.)
     endif ! use Leith+E
 
     if (CS%id_normstress > 0) then
@@ -705,6 +705,10 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
                 dudy(I,J) = CS%DX_dyBu(I,J)*OBC%segment(n)%tangential_grad(I,J,k)*G%IdxCu(I,j+1)*G%dxBu(I,J)
               endif
             endif
+            if (CS%use_Leithy) then
+              dvdx_smooth(I,J) = dvdx(I,J)
+              dudy_smooth(I,J) = dudy(I,J)
+            endif
           enddo
         elseif (OBC%segment(n)%is_E_or_W .and. (I >= is-2) .and. (I <= Ieq+1)) then
           do J=OBC%segment(n)%HI%JsdB,OBC%segment(n)%HI%JedB
@@ -726,6 +730,10 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
               else
                 dvdx(I,J) = CS%DY_dxBu(I,J)*OBC%segment(n)%tangential_grad(I,J,k)*G%IdyCv(i+1,J)*G%dxBu(I,J)
               endif
+            endif
+            if (CS%use_Leithy) then
+              dvdx_smooth(I,J) = dvdx(I,J)
+              dudy_smooth(I,J) = dudy(I,J)
             endif
           enddo
         endif
