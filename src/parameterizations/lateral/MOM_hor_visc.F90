@@ -1292,7 +1292,6 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
             Kh(i,j) = -m_leithy(i,j) * Ah(i,j)
             Kh_h(i,j,k) = Kh(i,j)
         enddo ; enddo
-        call pass_var(Kh_h(:,:,k), G%Domain, halo=2)
       endif
 
       if (CS%id_grid_Re_Ah>0) then
@@ -1490,7 +1489,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
 
         ! Leith+E doesn't recompute Kh at q points, it just interpolates it from h to q points
         if (CS%use_Leithy) then
-          Kh(I,J) = Kh_h(i,j,k)
+          Kh(I,J) = Kh_h(i+1,j+1,k)
         end if
 
         if (CS%id_Kh_q>0 .or. CS%debug) &
@@ -1598,7 +1597,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
       if (CS%use_Leithy) then
         call pass_var(Ah_h(:,:,k), G%Domain, halo=2)
         do J=js-1,Jeq ; do I=is-1,Ieq
-           Ah(I,J) = Ah_h(i,j,k)
+           Ah(I,J) = Ah_h(i+1,j+1,k)
         enddo ; enddo
       end if
 
