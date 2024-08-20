@@ -57,12 +57,12 @@ type, public:: stochastic_CS
                                         !! Index into this at h points.
   ! stochastic patterns
   real, allocatable :: sppt_wts(:,:)  !< Random pattern for ocean SPPT
-                                      !! tendencies with a number between 0 and 2 [nondim]
-  real, allocatable :: skeb_wts(:,:)  !< Random pattern for ocean SKEB [nondim]
-  real, allocatable :: epbl1_wts(:,:) !< Random pattern for K.E. generation [nondim]
-  real, allocatable :: epbl2_wts(:,:) !< Random pattern for K.E. dissipation [nondim]
+                                      !! tendencies with a number between 0 and 2
+  real, allocatable :: skeb_wts(:,:)  !< Random pattern for ocean SKEB
+  real, allocatable :: epbl1_wts(:,:) !< Random pattern for K.E. generation
+  real, allocatable :: epbl2_wts(:,:) !< Random pattern for K.E. dissipation
   type(time_type), pointer :: Time !< Pointer to model time (needed for sponges)
-  type(diag_ctrl), pointer :: diag=>NULL() !< structure used to regulate timing of diagnostic output
+  type(diag_ctrl), pointer :: diag=>NULL() !< A structure that is used to regulate the
 
   ! Taper array to smoothly zero out the SKEBS velocity increment near land
   real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_) :: taperCu !< Taper applied to u component of
@@ -92,8 +92,8 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
   integer :: num_procs         ! number of processors to pass to stochastic physics
   integer :: iret              ! return code from stochastic physics
   integer :: pe_zero           !  root pe
-  integer :: nx                ! number of x-points including halo
-  integer :: ny                ! number of x-points including halo
+  integer :: nxT, nxB          ! number of x-points including halo
+  integer :: nyT, nyB          ! number of y-points including halo
   integer :: i, j, k           ! loop indices
   real    :: tmp(grid%isdB:grid%iedB,grid%jsdB:grid%jedB) ! Used to construct tapers
   integer :: taper_width       ! Width (in cells) of the taper that brings the stochastic velocity
@@ -159,31 +159,34 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
      allocate(pelist(num_procs))
      call Get_PElist(pelist,commID = mom_comm)
      pe_zero = root_PE()
-     nx = grid%iedB - grid%isdB + 1
-     ny = grid%jedB - grid%jsdB + 1
-     call init_stochastic_physics_ocn(dt,grid%geoLonBu,grid%geoLatBu,nx,ny,GV%ke, &
-                                      CS%pert_epbl,CS%do_sppt,CS%do_skeb,pe_zero,mom_comm,iret)
+     nxT = grid%ied - grid%isd + 1
+     nyT = grid%jed - grid%jsd + 1
+     nxB = grid%iedB - grid%isdB + 1
+     nyB = grid%jedB - grid%jsdB + 1
+     call init_stochastic_physics_ocn(dt, grid%geoLonT, grid%geoLatT, nxT, nyT, GV%ke, &
+                                      grid%geoLonBu, grid%geoLatBu, nxB, nyB, &
+                                      CS%pert_epbl, CS%do_sppt, CS%do_skeb, pe_zero, mom_comm, iret)
      if (iret/=0)  then
          call MOM_error(FATAL, "call to init_stochastic_physics_ocn failed")
          return
      endif
 
-     if (CS%do_sppt) allocate(CS%sppt_wts(grid%isdB:grid%iedB,grid%jsdB:grid%jedB))
+     if (CS%do_sppt) allocate(CS%sppt_wts(grid%isd:grid%ied,grid%jsd:grid%jed))
      if (CS%do_skeb) allocate(CS%skeb_wts(grid%isdB:grid%iedB,grid%jsdB:grid%jedB))
      if (CS%do_skeb) allocate(CS%skeb_diss(grid%isd:grid%ied,grid%jsd:grid%jed,GV%ke), source=0.)
      if (CS%pert_epbl) then
-       allocate(CS%epbl1_wts(grid%isdB:grid%iedB,grid%jsdB:grid%jedB))
-       allocate(CS%epbl2_wts(grid%isdB:grid%iedB,grid%jsdB:grid%jedB))
+       allocate(CS%epbl1_wts(grid%isd:grid%ied,grid%jsd:grid%jed))
+       allocate(CS%epbl2_wts(grid%isd:grid%ied,grid%jsd:grid%jed))
      endif
   endif
 
-  CS%id_sppt_wts = register_diag_field('ocean_model', 'sppt_pattern', CS%diag%axesB1, Time, &
+  CS%id_sppt_wts = register_diag_field('ocean_model', 'sppt_pattern', CS%diag%axesT1, Time, &
        'random pattern for sppt', 'None')
   CS%id_skeb_wts = register_diag_field('ocean_model', 'skeb_pattern', CS%diag%axesB1, Time, &
        'random pattern for skeb', 'None')
-  CS%id_epbl1_wts = register_diag_field('ocean_model', 'epbl1_wts', CS%diag%axesB1, Time, &
+  CS%id_epbl1_wts = register_diag_field('ocean_model', 'epbl1_wts', CS%diag%axesT1, Time, &
       'random pattern for KE generation', 'None')
-  CS%id_epbl2_wts = register_diag_field('ocean_model', 'epbl2_wts', CS%diag%axesB1, Time, &
+  CS%id_epbl2_wts = register_diag_field('ocean_model', 'epbl2_wts', CS%diag%axesT1, Time, &
       'random pattern for KE dissipation', 'None')
   CS%id_skebu = register_diag_field('ocean_model', 'skebu', CS%diag%axesCuL, Time, &
        'zonal current perts', 'None')
