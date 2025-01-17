@@ -1270,6 +1270,7 @@ subroutine horizontal_viscosity(u, v, h, diffu, diffv, MEKE, VarMix, G, GV, US, 
               else
                 m_leithy(i,j) = CS%m_leithy_max(i,j)
               endif
+              m_leithy(i,j) = G%mask2dBu(i,j) * m_leithy(i,j)
             endif
           enddo ; enddo
 
