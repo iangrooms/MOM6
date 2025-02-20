@@ -1614,10 +1614,16 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
       MEKE%GM_src(i,j) = MEKE%GM_src(i,j) + Work_h
     endif ; endif
     if (skeb_use_gm) then
-      h_tot = sum(h(i,j,1:nz))
+      h_tot = 0.0
+      do k=1,nz
+        h_tot = h_tot + h(i,j,nz)
+      enddo
       skeb_gm_work(i,j)   = STOCH%skeb_gm_coef * Work_h
-      skeb_ebt_norm2(i,j) = GV%H_to_RZ * &
-                                     (sum(h(i,j,1:nz) * VarMix%ebt_struct(i,j,1:nz)**2) + h_neglect)
+      skeb_ebt_norm2(i,j) = 0.0
+      do k=1,nz
+        skeb_ebt_norm2(i,j) = skeb_ebt_norm2(i,j) + h(i,j,k) * VarMix%ebt_struct(i,j,k)**2
+      enddo
+      skeb_ebt_norm2(i,j) = GV%H_to_RZ * (skeb_ebt_norm2(i,j) + h_neglect)
     endif
   enddo ; enddo ; endif
 
