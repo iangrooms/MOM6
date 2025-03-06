@@ -803,7 +803,6 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
                                                         ! applying limiters [H L2 T-1 ~> m3 s-1 or kg s-1]
   real, allocatable :: skeb_gm_work(:,:)                ! Temp array to hold GM work for SKEB
   real, allocatable :: skeb_ebt_norm2(:,:)              ! Used to normalize EBT for SKEB
-  real :: h_tot ! total depth [H ~> m]
 
   logical :: present_slope_x, present_slope_y, calc_derivatives
   integer, dimension(2) :: EOSdom_u  ! The shifted I-computational domain to use for equation of
@@ -1614,10 +1613,6 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
       MEKE%GM_src(i,j) = MEKE%GM_src(i,j) + Work_h
     endif ; endif
     if (skeb_use_gm) then
-      h_tot = 0.0
-      do k=1,nz
-        h_tot = h_tot + h(i,j,nz)
-      enddo
       skeb_gm_work(i,j)   = STOCH%skeb_gm_coef * Work_h
       skeb_ebt_norm2(i,j) = 0.0
       do k=1,nz
