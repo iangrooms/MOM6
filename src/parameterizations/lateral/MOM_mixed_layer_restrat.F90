@@ -102,8 +102,11 @@ type, public :: mixedlayer_restrat_CS ; private
                                    !! front-length scales read from a file.
   type(time_type), pointer :: Time => NULL() !< A pointer to the ocean model's clock.
   logical :: use_Stanley_ML        !< If true, use the Stanley parameterization of SGS T variance
+  logical :: wave_enhanced_ustar   !< If true, enhance ustar for equilibrium surface waves (La-2=11),
+                                   !! following Eq. 28 in Bodner23.
   real    :: ustar_min             !< A minimum value of ustar in thickness units to avoid numerical
                                    !! problems [H T-1 ~> m s-1 or kg m-2 s-1]
+
   real    :: Kv_restrat            !< A viscosity that sets a floor on the momentum mixing rate
                                    !! during restratification, rescaled into thickness-based
                                    !! units [H2 T-1 ~> m2 s-1 or kg2 m-4 s-1]
@@ -805,6 +808,8 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real :: h_vel           ! htot interpolated onto velocity points [H ~> m or kg m-2]
   real :: w_star3         ! Cube of turbulent convective velocity [Z3 T-3 ~> m3 s-3]
   real :: u_star3         ! Cube of surface friction velocity [Z3 T-3 ~> m3 s-3]
+  real :: E_ustar         ! Surface wave ustar enhancement factor   [nondim]
+  real :: Lam2            ! Reciprocal of the squrared turbulent Langmuir number [nondim]
   real :: r_wpup          ! reciprocal of vertical momentum flux [T2 L-1 H-1 ~> s2 m-2 or m s2 kg-1]
   real :: absf            ! absolute value of f, interpolated to velocity points [T-1 ~> s-1]
   real :: f_h             ! Coriolis parameter at h-points [T-1 ~> s-1]
@@ -843,7 +848,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   covTS(:) = 0.0 ! Might be in tv% in the future. Not implemented for the time being.
   varS(:) = 0.0  ! Ditto.
 
- ! This value is roughly (pi / (the age of the universe) )^2.
+  ! This value is roughly (pi / (the age of the universe) )^2.
   absurdly_small_freq2 = 1e-34*US%T_to_s**2
 
   if (.not.associated(tv%eqn_of_state)) call MOM_error(FATAL, "mixedlayer_restrat_Bodner: "// &
@@ -864,6 +869,17 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
 
   ! Extract the friction velocity from the forcing type.
   call find_ustar(forces, tv, U_star_2d, G, GV, US, halo=1)
+
+  ! wave enhancement of ustar following Eq. 28 in Bodner23
+  if (CS%wave_enhanced_ustar) then
+    ! Assuming wind wave equilibrium (Lam2=11) until Lam2 becomes available
+    Lam2 = 11.
+    E_ustar   =  sqrt( 1.0 + (Lam2 * 0.104) + (Lam2 * Lam2 * 0.00118))
+    ! Wave Enhanced
+    do j=js-1,je+1 ; do i=is-1,ie+1
+      U_star_2d(i,j) = E_ustar * U_star_2d(i,j)
+    enddo ; enddo
+  endif
 
   if (CS%debug) then
     call hchksum(h,'mixed_Bodner: h', G%HI, haloshift=1, unscale=GV%H_to_mks)
@@ -1728,6 +1744,9 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
              "The default is less than the molecular viscosity of water times the Coriolis "//&
              "parameter a micron away from the equator.", &
              units="m2 s-2", default=1.0e-24, scale=US%m_to_Z**2*US%T_to_s**2)
+    call get_param(param_file, mdl, "WAVE_ENHANCED_USTAR", CS%wave_enhanced_ustar, &
+             "If true, enhance ustar for equilibrium surface waves (La-2=11.), "// &
+             "following Eq. 28 in Bodner23.", default=.false.)
     call get_param(param_file, mdl, "TAIL_DH", CS%MLE_tail_dh, &
              "Fraction by which to extend the mixed-layer restratification "//&
              "depth used for a smoother stream function at the base of "//&
