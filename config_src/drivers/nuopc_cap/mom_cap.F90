@@ -158,6 +158,7 @@ type(is_restart_fh_type) :: restartfh_info     ! For flexible restarts in UFS
 #endif
 character(len=8)  :: restart_mode = 'alarms'
 character(len=16) :: inst_suffix = ''
+logical           :: pointer_date = .true. ! append date to rpointer
 real(8) :: timere
 
 contains
@@ -442,6 +443,7 @@ subroutine InitializeAdvertise(gcomp, importState, exportState, clock, rc)
   logical                                :: existflag
   logical                                :: use_waves  ! If true, the wave modules are active.
   character(len=40)                      :: wave_method ! Wave coupling method.
+  logical                                :: use_MARBL  ! If true, MARBL tracers are being used.
   integer                                :: userRc
   integer                                :: localPet
   integer                                :: localPeCount
@@ -493,12 +495,20 @@ subroutine InitializeAdvertise(gcomp, importState, exportState, clock, rc)
   if (ChkErr(rc,__LINE__,u_FILE_u)) return
   call ensemble_manager_init(inst_suffix)
 
-  write(timestamp,'(".",i4.4,"-",i2.2,"-",i2.2,"-",i5.5)'),year,month,day,hour*3600+minute*60+second
-  rpointer_filename = 'rpointer.ocn'//trim(inst_suffix)//timestamp
-  inquire(file=trim(rpointer_filename), exist=found)
-  ! for backward compatibility
-  if (.not. found) then
-     rpointer_filename = 'rpointer.ocn'//trim(inst_suffix)
+  ! Default to appending dates to the restart pointer unless otherwise specified in NUOPC settings
+  call NUOPC_CompAttributeGet(gcomp, name="restart_pointer_append_date", value=cvalue, &
+       isPresent=isPresent, isSet=isSet, rc=rc)
+  if (ChkErr(rc,__LINE__,u_FILE_u)) return
+  if (isPresent .and. isSet) pointer_date = (trim(cvalue) .eq. ".true.")
+
+  rpointer_filename = 'rpointer.ocn'//trim(inst_suffix)
+  if (pointer_date) then
+    write(timestamp,'(".",i4.4,"-",i2.2,"-",i2.2,"-",i5.5)'),year,month,day,hour*3600+minute*60+second
+    inquire(file=trim(rpointer_filename//timestamp), exist=found)
+    ! for backward compatibility
+    if (found) then
+      rpointer_filename = trim(rpointer_filename//timestamp)
+    endif
   endif
 #endif
 
@@ -588,8 +598,8 @@ subroutine InitializeAdvertise(gcomp, importState, exportState, clock, rc)
   Ice_ocean_boundary%ice_ncat = 0
   if (cesm_coupled) then
     ! Note that flds_i2o_per_cat is set by the env_run.xml variable CPL_I2O_PER_CAT
-    ! This xml variable is set by MOM_interface's buildnml script; it has the same
-    ! value as USE_MARBL in the case
+    ! In CESM, this xml variable is set by MOM_interface's buildnml script and by
+    ! default it is false unless ICE_NCAT>0 and USE_MARBL_TRACERS=True
     call NUOPC_CompAttributeGet(gcomp, name='flds_i2o_per_cat', value=cvalue, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
     read(cvalue,*) i2o_per_cat
@@ -655,14 +665,13 @@ subroutine InitializeAdvertise(gcomp, importState, exportState, clock, rc)
   else if (runtype == "continue") then ! hybrid or branch or continuos runs
 
     if (cesm_coupled) then
-      call ESMF_LogWrite('MOM_cap: restart requested, using rpointer.ocn', ESMF_LOGMSG_WARNING)
+      call ESMF_LogWrite('MOM_cap: restart requested, using '//trim(rpointer_filename), ESMF_LOGMSG_WARNING)
       call ESMF_GridCompGet(gcomp, vm=vm, rc=rc)
       if (ChkErr(rc,__LINE__,u_FILE_u)) return
       call ESMF_VMGet(vm, localPet=localPet, rc=rc)
       if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
       if (localPet == 0) then
-        ! this hard coded for rpointer.ocn right now
         open(newunit=readunit, file=rpointer_filename, form='formatted', status='old', iostat=iostat)
         if (iostat /= 0) then
           call ESMF_LogSetError(ESMF_RC_FILE_OPEN, msg=subname//' ERROR opening '//rpointer_filename, &
@@ -712,6 +721,8 @@ subroutine InitializeAdvertise(gcomp, importState, exportState, clock, rc)
 
   call get_domain_extent(ocean_public%domain, isc, iec, jsc, jec)
 
+  call query_ocean_state(ocean_state, use_waves=use_waves, wave_method=wave_method, use_MARBL=use_MARBL)
+
   allocate(Ice_ocean_boundary% u_flux (isc:iec,jsc:jec),          &
            Ice_ocean_boundary% v_flux (isc:iec,jsc:jec),          &
            Ice_ocean_boundary% t_flux (isc:iec,jsc:jec),          &
@@ -755,22 +766,20 @@ subroutine InitializeAdvertise(gcomp, importState, exportState, clock, rc)
              Ice_ocean_boundary% hrofi_glc (isc:iec,jsc:jec),       &
              source=0.0)
 
-    ! Needed for MARBL
-    ! These are allocated separately to make it easier to pull out
-    ! of the cesm_coupled block if other models want to add BGC
-    allocate(Ice_ocean_boundary% nhx_dep (isc:iec,jsc:jec),         &
-             Ice_ocean_boundary% noy_dep (isc:iec,jsc:jec),         &
-             Ice_ocean_boundary% atm_fine_dust_flux (isc:iec,jsc:jec),  &
-             Ice_ocean_boundary% atm_coarse_dust_flux (isc:iec,jsc:jec),&
-             Ice_ocean_boundary% seaice_dust_flux (isc:iec,jsc:jec),    &
-             Ice_ocean_boundary% atm_bc_flux (isc:iec,jsc:jec),         &
-             Ice_ocean_boundary% seaice_bc_flux (isc:iec,jsc:jec),      &
-             Ice_ocean_boundary% atm_co2_prog (isc:iec,jsc:jec),    &
-             Ice_ocean_boundary% atm_co2_diag (isc:iec,jsc:jec),    &
-             source=0.0)
+    if (use_MARBL) then
+      allocate(Ice_ocean_boundary% nhx_dep (isc:iec,jsc:jec),         &
+              Ice_ocean_boundary% noy_dep (isc:iec,jsc:jec),         &
+              Ice_ocean_boundary% atm_fine_dust_flux (isc:iec,jsc:jec),  &
+              Ice_ocean_boundary% atm_coarse_dust_flux (isc:iec,jsc:jec),&
+              Ice_ocean_boundary% seaice_dust_flux (isc:iec,jsc:jec),    &
+              Ice_ocean_boundary% atm_bc_flux (isc:iec,jsc:jec),         &
+              Ice_ocean_boundary% seaice_bc_flux (isc:iec,jsc:jec),      &
+              Ice_ocean_boundary% atm_co2_prog (isc:iec,jsc:jec),    &
+              Ice_ocean_boundary% atm_co2_diag (isc:iec,jsc:jec),    &
+              source=0.0)
+    endif
   endif
 
-  call query_ocean_state(ocean_state, use_waves=use_waves, wave_method=wave_method)
   if (use_waves) then
     if (wave_method == "EFACTOR") then
       allocate( Ice_ocean_boundary%lamult(isc:iec,jsc:jec), source=0.0)
@@ -842,7 +851,7 @@ subroutine InitializeAdvertise(gcomp, importState, exportState, clock, rc)
                       ungridded_lbound=1, ungridded_ubound=Ice_ocean_boundary%ice_ncat)
   endif
 
-  if (cesm_coupled) then
+  if (cesm_coupled .and. use_MARBL) then
     ! Fields needed for MARBL
     call fld_list_add(fldsToOcn_num, fldsToOcn, "Faxa_ndep"                  , "will provide", & !-> nitrogen deposition
                       ungridded_lbound=1, ungridded_ubound=2)
@@ -882,7 +891,7 @@ subroutine InitializeAdvertise(gcomp, importState, exportState, clock, rc)
   call fld_list_add(fldsFrOcn_num, fldsFrOcn, "So_dhdy"    , "will provide")
   call fld_list_add(fldsFrOcn_num, fldsFrOcn, "Fioo_q"     , "will provide")
   call fld_list_add(fldsFrOcn_num, fldsFrOcn, "So_bldepth" , "will provide")
-  if (cesm_coupled) then
+  if (cesm_coupled .and. use_MARBL) then
     call fld_list_add(fldsFrOcn_num, fldsFrOcn, "Faoo_fco2_ocn", "will provide")
   endif
 
@@ -1916,7 +1925,10 @@ subroutine ModelAdvance(gcomp, rc)
 
         write(timestamp,'(".",i4.4,"-",i2.2,"-",i2.2,"-",i5.5)'),year,month,day,hour*3600+minute*60+seconds
 
-        rpointer_filename = 'rpointer.ocn'//trim(inst_suffix)//timestamp
+        rpointer_filename = 'rpointer.ocn'//trim(inst_suffix)
+        if (pointer_date) then
+          rpointer_filename = trim(rpointer_filename//timestamp)
+        endif
 
         write(restartname,'(A,".mom6.r",A)') &
              trim(casename), timestamp
