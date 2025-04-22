@@ -1239,14 +1239,6 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
         enddo ; enddo
       endif
 
-      ! In Leith+E parameterization Kh is computed after Ah in the biharmonic loop.
-      ! The harmonic component of str_xx is added in the biharmonic loop.
-      if (CS%use_Leithy) then
-        do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
-          Kh(i,j) = 0.
-        enddo ; enddo
-      endif
-
       if (CS%id_Kh_h>0 .or. CS%debug) then
         do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
           Kh_h(i,j,k) = Kh(i,j)
@@ -1339,7 +1331,6 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
               else
                 m_leithy(i,j) = CS%m_leithy_max(i,j)
               endif
-              m_leithy(i,j) = G%mask2dBu(i,j) * m_leithy(i,j)
             endif
           enddo ; enddo
 
@@ -1432,8 +1423,8 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
         ! Compute Leith+E Kh after bounds have been applied to Ah
         ! and after it has been smoothed. Kh = -m_leithy * Ah
         do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
-          Kh(i,j) = -m_leithy(i,j) * Ah(i,j)
-          Kh_h(i,j,k) = Kh(i,j)
+          Kh_BS(i,j) = -m_leithy(i,j) * Ah(i,j)
+          BS_coeff_h(i,j,k) = Kh_BS(i,j)
         enddo ; enddo
       endif
 
@@ -1452,7 +1443,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
 
         str_xx(i,j) = str_xx(i,j) + d_str
 
-        if (CS%use_Leithy) str_xx(i,j) = str_xx(i,j) - Kh(i,j) * sh_xx_smooth(i,j)
+        if (CS%use_Leithy) str_xx(i,j) = str_xx(i,j) - Kh_BS(i,j) * sh_xx_smooth(i,j)
 
         ! Keep a copy of the biharmonic contribution for backscatter parameterization
         bhstr_xx(i,j) = d_str * (h(i,j,k) * CS%reduction_xx(i,j))
@@ -1674,8 +1665,13 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
 
         ! Leith+E doesn't recompute Kh at q points, it just interpolates it from h to q points
         if (CS%use_Leithy) then
-          Kh(I,J) = 0.25 * ((Kh_h(i,j,k) + Kh_h(i+1,j+1,k)) + (Kh_h(i,j+1,k) + Kh_h(i+1,j,k)))
+          Kh_BS(I,J) = 0.25 * ((BS_coeff_h(i,j  ,k) + BS_coeff_h(i+1,j+1,k)) + &
+                               (BS_coeff_h(i,j+1,k) + BS_coeff_h(i+1,j  ,k)))
         end if
+
+        if (CS%id_BS_coeff_q>0) then
+          BS_coeff_q(I,J,k) = Kh_BS(I,J)
+        endif
 
         if (CS%id_Kh_q>0 .or. CS%debug) &
           Kh_q(I,J,k) = Kh(I,J)
@@ -1687,15 +1683,14 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
           sh_xy_q(I,J,k) = sh_xy(I,J)
       enddo ; enddo
 
-      if ( .not. CS%use_Leithy) then
+      do J=js-1,Jeq ; do I=is-1,Ieq
+        str_xy(I,J) = -Kh(I,J) * sh_xy(I,J)
+      enddo ; enddo
+      if (CS%use_Leithy) then
         do J=js-1,Jeq ; do I=is-1,Ieq
-          str_xy(I,J) = -Kh(I,J) * sh_xy(I,J)
+          str_xy(I,J) = str_xy(I,J) - Kh_BS(I,J) * sh_xy_smooth(I,J)
         enddo ; enddo
-      else
-        do J=js-1,Jeq ; do I=is-1,Ieq
-          str_xy(I,J) = -Kh(I,J) * sh_xy_smooth(I,J)
-        enddo ; enddo
-      endif
+      end if
     else
       do J=js-1,Jeq ; do I=is-1,Ieq
         str_xy(I,J) = 0.
@@ -2229,6 +2224,9 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
     if (CS%id_visc_limit_q_frac>0) call post_data(CS%id_visc_limit_q_frac, visc_limit_q_frac, CS%diag)
     if (CS%id_visc_limit_h_flag>0) call post_data(CS%id_visc_limit_h_flag, visc_limit_h_flag, CS%diag)
     if (CS%id_visc_limit_q_flag>0) call post_data(CS%id_visc_limit_q_flag, visc_limit_q_flag, CS%diag)
+  endif
+
+  if (CS%EY24_EBT_BS .or. CS%use_leithy) then
     if (CS%id_BS_coeff_h>0) call post_data(CS%id_BS_coeff_h, BS_coeff_h, CS%diag)
     if (CS%id_BS_coeff_q>0) call post_data(CS%id_BS_coeff_q, BS_coeff_q, CS%diag)
   endif
@@ -2542,6 +2540,10 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
                  "If true, use a biharmonic Leith nonlinear eddy "//&
                  "viscosity together with a harmonic backscatter.", &
                  default=.false.)
+  if (CS%EY24_EBT_BS .and. CS%use_Leithy) then
+    call MOM_error(FATAL, "MOM_hor_visc.F90, hor_visc_init:"//&
+                 "Cannot simultaneously use EY24 EBT backscatter and Leith+E backscatter")
+  endif
   call get_param(param_file, mdl, "BOUND_AH", CS%bound_Ah, &
                  "If true, the biharmonic coefficient is locally limited "//&
                  "to be stable.", default=.true., do_not_log=.not.CS%biharmonic)
@@ -2964,7 +2966,9 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
       if (CS%use_Leithy) then
         CS%biharm6_const_xx(i,j) = Leith_bi_const * max(G%dxT(i,j),G%dyT(i,j))**6
         CS%m_const_leithy(i,j) = 0.5 * sqrt(CS%c_K) * max(G%dxT(i,j),G%dyT(i,j))
-        CS%m_leithy_max(i,j) = 4. / max(G%dxT(i,j),G%dyT(i,j))**2
+        CS%m_leithy_max(i,j) = 4. / max(G%dxT(i,j),G%dyT(i,j))**2 * &
+                               G%mask2dBu(i,j  ) * G%mask2dBu(i-1,j  ) * &
+                               G%mask2dBu(i,j-1) * G%mask2dBu(i-1,j-1)
       endif
       CS%Ah_bg_xx(i,j) = MAX(Ah, Ah_vel_scale * grid_sp_h2 * sqrt(grid_sp_h2))
       if (CS%Re_Ah > 0.0) CS%Re_Ah_const_xx(i,j) = grid_sp_h3 / CS%Re_Ah
@@ -3252,7 +3256,7 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
         'W m-2', conversion=US%RZ3_T3_to_W_m2*US%L_to_Z**2)
   endif
 
-  if (CS%EY24_EBT_BS) then
+  if (CS%EY24_EBT_BS .or. CS%use_leithy) then
     CS%id_BS_coeff_h = register_diag_field('ocean_model', 'BS_coeff_h', diag%axesTL, Time, &
         'Backscatter coefficient at h points', 'm2 s-1')
     CS%id_BS_coeff_q = register_diag_field('ocean_model', 'BS_coeff_q', diag%axesBL, Time, &
