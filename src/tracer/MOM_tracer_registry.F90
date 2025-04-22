@@ -353,6 +353,22 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
           diag%axesCvL, Time, trim(flux_longname)//" advective meridional flux" , &
           trim(flux_units), v_extensive=.true., x_cell_method='sum', &
           conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T)
+      Tr%id_adx_resolved = register_diag_field("ocean_model", trim(shortnm)//"_adx_resolved", &
+          diag%axesCuL, Time, trim(flux_longname)//" resolved advective zonal flux" , &
+          trim(flux_units), v_extensive=.true., y_cell_method='sum', &
+          conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T)
+      Tr%id_ady_resolved = register_diag_field("ocean_model", trim(shortnm)//"_ady_resolved", &
+          diag%axesCvL, Time, trim(flux_longname)//" resolved advective meridional flux" , &
+          trim(flux_units), v_extensive=.true., x_cell_method='sum', &
+          conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T)
+      Tr%id_adx_param = register_diag_field("ocean_model", trim(shortnm)//"_adx_param", &
+          diag%axesCuL, Time, trim(flux_longname)//" parameterized advective zonal flux" , &
+          trim(flux_units), v_extensive=.true., y_cell_method='sum', &
+          conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T)
+      Tr%id_ady_param = register_diag_field("ocean_model", trim(shortnm)//"_ady_param", &
+          diag%axesCvL, Time, trim(flux_longname)//" resolved parameterized meridional flux" , &
+          trim(flux_units), v_extensive=.true., x_cell_method='sum', &
+          conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T)
       Tr%id_dfx = register_diag_field("ocean_model", trim(shortnm)//"_dfx", &
           diag%axesCuL, Time, trim(flux_longname)//" diffusive zonal flux" , &
           trim(flux_units), v_extensive=.true., y_cell_method='sum', &
@@ -375,6 +391,18 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
           flux_units, v_extensive=.true., conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, y_cell_method='sum')
       Tr%id_ady = register_diag_field("ocean_model", trim(shortnm)//"_ady", &
           diag%axesCvL, Time, "Advective (by residual mean) Meridional Flux of "//trim(flux_longname), &
+          flux_units, v_extensive=.true., conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, x_cell_method='sum')
+      Tr%id_adx_resolved = register_diag_field("ocean_model", trim(shortnm)//"_adx_resolved", &
+          diag%axesCuL, Time, "Advective (by resolved flow) Zonal Flux of "//trim(flux_longname), &
+          flux_units, v_extensive=.true., conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, y_cell_method='sum')
+      Tr%id_ady_resolved = register_diag_field("ocean_model", trim(shortnm)//"_ady_resolved", &
+          diag%axesCvL, Time, "Advective (by resolved flow) Meridional Flux of "//trim(flux_longname), &
+          flux_units, v_extensive=.true., conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, x_cell_method='sum')
+      Tr%id_adx_param = register_diag_field("ocean_model", trim(shortnm)//"_adx_param", &
+          diag%axesCuL, Time, "Advective (by parameterized flow) Zonal Flux of "//trim(flux_longname), &
+          flux_units, v_extensive=.true., conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, y_cell_method='sum')
+      Tr%id_ady_param = register_diag_field("ocean_model", trim(shortnm)//"_ady_param", &
+          diag%axesCvL, Time, "Advective (by parameterized flow) Meridional Flux of "//trim(flux_longname), &
           flux_units, v_extensive=.true., conversion=Tr%flux_scale*(US%L_to_m**2)*US%s_to_T, x_cell_method='sum')
       Tr%id_dfx = register_diag_field("ocean_model", trim(shortnm)//"_diffx", &
           diag%axesCuL, Time, "Diffusive Zonal Flux of "//trim(flux_longname), &
@@ -405,6 +433,10 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
         diag%axesT1, Time, "Surface values of "// trim(longname), trim(units))
     if (Tr%id_adx > 0) call safe_alloc_ptr(Tr%ad_x,IsdB,IedB,jsd,jed,nz)
     if (Tr%id_ady > 0) call safe_alloc_ptr(Tr%ad_y,isd,ied,JsdB,JedB,nz)
+    if (Tr%id_adx_resolved > 0) call safe_alloc_ptr(Tr%ad_x_resolved,IsdB,IedB,jsd,jed,nz)
+    if (Tr%id_ady_resolved > 0) call safe_alloc_ptr(Tr%ad_y_resolved,isd,ied,JsdB,JedB,nz)
+    if (Tr%id_adx_param > 0) call safe_alloc_ptr(Tr%ad_x_param,IsdB,IedB,jsd,jed,nz)
+    if (Tr%id_ady_param > 0) call safe_alloc_ptr(Tr%ad_y_param,isd,ied,JsdB,JedB,nz)
     if (Tr%id_dfx > 0) call safe_alloc_ptr(Tr%df_x,IsdB,IedB,jsd,jed,nz)
     if (Tr%id_dfy > 0) call safe_alloc_ptr(Tr%df_y,isd,ied,JsdB,JedB,nz)
     if (Tr%id_hbd_dfx > 0) call safe_alloc_ptr(Tr%hbd_dfx,IsdB,IedB,jsd,jed,nz)
@@ -774,6 +806,10 @@ subroutine post_tracer_transport_diagnostics(G, GV, Reg, h_diag, diag)
     if (Tr%id_tr_post_horzn> 0) call post_data(Tr%id_tr_post_horzn, Tr%t, diag)
     if (Tr%id_adx > 0) call post_data(Tr%id_adx, Tr%ad_x, diag, alt_h=h_diag)
     if (Tr%id_ady > 0) call post_data(Tr%id_ady, Tr%ad_y, diag, alt_h=h_diag)
+    if (Tr%id_adx_resolved > 0) call post_data(Tr%id_adx_resolved, Tr%ad_x_resolved, diag, alt_h=h_diag)
+    if (Tr%id_ady_resolved > 0) call post_data(Tr%id_ady_resolved, Tr%ad_y_resolved, diag, alt_h=h_diag)
+    if (Tr%id_adx_param > 0) call post_data(Tr%id_adx_param, Tr%ad_x_param, diag, alt_h=h_diag)
+    if (Tr%id_ady_param > 0) call post_data(Tr%id_ady_param, Tr%ad_y_param, diag, alt_h=h_diag)
     if (Tr%id_dfx > 0) call post_data(Tr%id_dfx, Tr%df_x, diag, alt_h=h_diag)
     if (Tr%id_dfy > 0) call post_data(Tr%id_dfy, Tr%df_y, diag, alt_h=h_diag)
     if (Tr%id_adx_2d > 0) call post_data(Tr%id_adx_2d, Tr%ad2d_x, diag)

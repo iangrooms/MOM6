@@ -382,6 +382,15 @@ type, public :: MOM_control_struct ; private
   type(diag_grid_storage)  :: diag_pre_sync !< The grid (thicknesses) before remapping
   type(diag_grid_storage)  :: diag_pre_dyn  !< The grid (thicknesses) before dynamics
 
+  logical :: accumulate_resolved_flux = .false. !< If true, accumulate resolved flux for tracers for diagnostics
+                                                !! separating the tracer flux due to resolved and parameterized flow
+  logical :: do_resolved_advection = .false.    !< If true, calculate advection by resolved flow
+  logical :: do_param_advection = .false.       !< If true, calculate advection by parameterized flow
+  real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_,NKMEM_) :: &
+    uhtr_resolved   !< accumulated zonal thickness fluxes due to resolved flow to advect tracers [H L2 ~> m3 or kg]
+  real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_,NKMEM_) :: &
+    vhtr_resolved   !< accumulated meridional thickness fluxes due to resolved flow to advect tracers [H L2 ~> m3 or kg]
+
   ! The remainder of this type provides pointers to child module control structures.
 
   type(MOM_dyn_unsplit_CS),      pointer :: dyn_unsplit_CSp => NULL()
@@ -1284,6 +1293,19 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
 
   endif ! -------------------------------------------------- end SPLIT
 
+  ! Accumulate resolved flux for tracer diagnostics
+  if (CS%accumulate_resolved_flux) then
+    !$OMP parallel do default(shared)
+    do k=1,nz
+      do j=js-2,je+2 ; do I=Isq-2,Ieq+2
+        CS%uhtr_resolved(I,j,k) = CS%uhtr_resolved(I,j,k) + CS%uh(I,j,k)*dt
+      enddo ; enddo
+      do J=Jsq-2,Jeq+2 ; do i=is-2,ie+2
+        CS%vhtr_resolved(i,J,k) = CS%vhtr_resolved(i,J,k) + CS%vh(i,J,k)*dt
+      enddo ; enddo
+    enddo
+  endif
+
   ! Update the model's current to reflect wind-wave growth
   if (Waves%Stokes_DDT .and. (.not.Waves%Passive_Stokes_DDT)) then
     do J=jsq,jeq ; do i=is,ie
@@ -1420,8 +1442,18 @@ subroutine step_MOM_tracer_dyn(CS, G, GV, US, h, Time_local)
   type(group_pass_type) :: pass_T_S
   integer :: halo_sz ! The size of a halo where data must be valid.
   logical :: x_first ! If true, advect tracers first in the x-direction, then y.
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: &
+    uhtr_tmp             ! Temp. variable for advecting with alternate volume fluxes [H L2 ~> m3 or kg]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: &
+    vhtr_tmp             ! Temp. variable for advecting with alternate volume fluxes[H L2 ~> m3 or kg]
+  integer :: i, j, k, m, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
+  integer :: IsdB, IedB, JsdB, JedB
   logical :: showCallTree
+
   showCallTree = callTree_showQuery()
+
+  is  = G%isc ; ie  = G%iec ; js  = G%jsc ; je  = G%jec ; nz = GV%ke
+  Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
 
   if (CS%debug) then
     call cpu_clock_begin(id_clock_other)
@@ -1451,7 +1483,27 @@ subroutine step_MOM_tracer_dyn(CS, G, GV, US, h, Time_local)
   endif
   if (CS%debug) call MOM_tracer_chksum("Pre-advect ", CS%tracer_Reg, G)
   call advect_tracer(h, CS%uhtr, CS%vhtr, CS%OBC, CS%t_dyn_rel_adv, G, GV, US, &
-                     CS%tracer_adv_CSp, CS%tracer_Reg, x_first_in=x_first)
+                     CS%tracer_adv_CSp, CS%tracer_Reg, x_first_in=x_first, flux_type=0)
+
+  if (CS%do_resolved_advection) then
+    call advect_tracer(h, CS%uhtr_resolved, CS%vhtr_resolved, CS%OBC, CS%t_dyn_rel_adv, G, GV, US, &
+                       CS%tracer_adv_CSp, CS%tracer_Reg, x_first_in=x_first, flux_type=1)
+  endif
+
+  if (CS%do_param_advection) then
+    !$OMP parallel do default(shared)
+    do k=1,nz
+      do j=js-2,je+2 ; do I=Isq-2,Ieq+2
+        uhtr_tmp(I,j,k) = CS%uhtr(I,j,k) - CS%uhtr_resolved(I,j,k)
+      enddo ; enddo
+      do J=Jsq-2,Jeq+2 ; do i=is-2,ie+2
+        vhtr_tmp(i,J,k) = CS%vhtr(i,J,k) - CS%vhtr_resolved(i,J,k)
+      enddo ; enddo
+    enddo
+    call advect_tracer(h, uhtr_tmp, vhtr_tmp, CS%OBC, CS%t_dyn_rel_adv, G, GV, US, &
+                       CS%tracer_adv_CSp, CS%tracer_Reg, x_first_in=x_first, flux_type=2)
+  endif
+
   if (CS%debug) call MOM_tracer_chksum("Post-advect ", CS%tracer_Reg, G)
   call tracer_hordiff(h, CS%t_dyn_rel_adv, CS%MEKE, CS%VarMix, CS%visc, G, GV, US, &
                       CS%tracer_diff_CSp, CS%tracer_Reg, CS%tv)
@@ -1479,6 +1531,10 @@ subroutine step_MOM_tracer_dyn(CS, G, GV, US, h, Time_local)
   call cpu_clock_begin(id_clock_thermo) ; call cpu_clock_begin(id_clock_tracer)
   CS%uhtr(:,:,:) = 0.0
   CS%vhtr(:,:,:) = 0.0
+  if (CS%accumulate_resolved_flux) then
+    CS%uhtr_resolved(:,:,:) = 0.0
+    CS%vhtr_resolved(:,:,:) = 0.0
+  endif
   CS%n_dyn_steps_in_adv = 0
   CS%t_dyn_rel_adv = 0.0
   call cpu_clock_end(id_clock_tracer) ; call cpu_clock_end(id_clock_thermo)
@@ -2099,7 +2155,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
 
-  integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz
+  integer :: i, j, k, m, is, ie, js, je, isd, ied, jsd, jed, nz
   integer :: IsdB, IedB, JsdB, JedB
   real    :: dtbt              ! If negative, this specifies the barotropic timestep as a fraction
                                ! of the maximum stable value [nondim].
@@ -3412,6 +3468,25 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     call ALE_register_diags(Time, G, GV, US, diag, CS%ALE_CSp)
   endif
 
+  ! determine if we need to accumulate resolved transports for tracer advection diagnostics
+  do m = 1,CS%tracer_Reg%ntr
+    if (CS%tracer_Reg%Tr(m)%id_adx_resolved > 0 .or. &
+        CS%tracer_Reg%Tr(m)%id_ady_resolved > 0) then
+      CS%accumulate_resolved_flux = .true.
+      CS%do_resolved_advection = .true.
+    endif
+    if (CS%tracer_Reg%Tr(m)%id_adx_param    > 0 .or. &
+        CS%tracer_Reg%Tr(m)%id_ady_param    > 0) then
+      CS%accumulate_resolved_flux = .true.
+      CS%do_param_advection = .true.
+    endif
+  enddo
+  if (CS%accumulate_resolved_flux) then
+    ALLOC_(CS%uhtr_resolved(IsdB:IedB,jsd:jed,nz)) ; CS%uhtr_resolved(:,:,:) = 0.0
+    ALLOC_(CS%vhtr_resolved(isd:ied,JsdB:JedB,nz)) ; CS%vhtr_resolved(:,:,:) = 0.0
+  endif
+
+
   ! Do any necessary halo updates on any auxiliary variables that have been initialized.
   call cpu_clock_begin(id_clock_pass_init)
   if (associated(CS%visc%Kv_shear)) &
@@ -4294,6 +4369,10 @@ subroutine MOM_end(CS)
   ! TODO: debug_truncations deallocation
 
   DEALLOC_(CS%uhtr) ; DEALLOC_(CS%vhtr)
+
+  if (CS%accumulate_resolved_flux) then
+    DEALLOC_(CS%uhtr_resolved) ; DEALLOC_(CS%vhtr_resolved)
+  endif
 
   if (associated(CS%Hml)) deallocate(CS%Hml)
   if (associated(CS%tv%salt_deficit)) deallocate(CS%tv%salt_deficit)
