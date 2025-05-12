@@ -181,7 +181,8 @@ type, public :: hor_visc_CS ; private
     dx_dyT,         & !< Pre-calculated dx/dy at h points [nondim]
     dy_dxT,         & !< Pre-calculated dy/dx at h points [nondim]
     m_const_leithy, & !< Pre-calculated .5*sqrt(c_K)*max{dx,dy} [L ~> m]
-    m_leithy_max      !< Pre-calculated 4./max(dx,dy)^2 at h points [L-2 ~> m-2]
+    m_leithy_max,   & !< Pre-calculated 4./max(dx,dy)^2 at h points [L-2 ~> m-2]
+    Iwts              !< Pre-calculated 1./sum_5x5(G%mask2dT) [nondim]
   real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEMB_PTR_) :: &
     dx2q,    & !< Pre-calculated dx^2 at q points [L2 ~> m2]
     dy2q,    & !< Pre-calculated dy^2 at q points [L2 ~> m2]
@@ -189,10 +190,12 @@ type, public :: hor_visc_CS ; private
     dy_dxBu    !< Pre-calculated dy/dx at q points [nondim]
   real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_) :: &
     Idx2dyCu, & !< 1/(dx^2 dy) at u points [L-3 ~> m-3]
-    Idxdy2u     !< 1/(dx dy^2) at u points [L-3 ~> m-3]
+    Idxdy2u,  & !< 1/(dx dy^2) at u points [L-3 ~> m-3]
+    Iwts_u      !< 1/sum_5x5(G%mask2Cu) [nondim]
   real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_) :: &
     Idx2dyCv, & !< 1/(dx^2 dy) at v points [L-3 ~> m-3]
-    Idxdy2v     !< 1/(dx dy^2) at v points [L-3 ~> m-3]
+    Idxdy2v,  & !< 1/(dx dy^2) at v points [L-3 ~> m-3]
+    Iwts_v      !< 1/sum_5x5(G%mask2Cv) [nondim]
 
   ! The following variables are precalculated time-invariant combinations of
   ! parameters and metric terms.
@@ -653,7 +656,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
       ! One call applies the filter twice
       u_smooth(:,:,k) = u(:,:,k)
       v_smooth(:,:,k) = v(:,:,k)
-      call smooth_x9_uv(G, u_smooth(:,:,k), v_smooth(:,:,k), zero_land=.false.)
+      call smooth_x9_uv(CS, G, u_smooth(:,:,k), v_smooth(:,:,k), zero_land=.false.)
     enddo
     call pass_vector(u_smooth, v_smooth, G%Domain)
   endif
@@ -1337,7 +1340,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
           if (CS%smooth_Ah) then
             ! Smooth m_leithy.  A single call smoothes twice.
             call pass_var(m_leithy, G%Domain, halo=2)
-            call smooth_x9_h(G, m_leithy, zero_land=.true.)
+            call smooth_x9_h(CS, G, m_leithy, zero_land=.true.)
             call pass_var(m_leithy, G%Domain)
           endif
           ! Get Ah
@@ -1356,7 +1359,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
             enddo ; enddo
             call pass_var(Ah_sq, G%Domain, halo=2)
             ! A single call smoothes twice.
-            call smooth_x9_h(G, Ah_sq, zero_land=.false.)
+            call smooth_x9_h(CS, G, Ah_sq, zero_land=.false.)
             call pass_var(Ah_sq, G%Domain)
             do j=js_Kh,je_Kh ; do i=is_Kh,ie_Kh
               Ah_h(i,j,k) = max(CS%Ah_bg_xx(i,j), sqrt(max(0., Ah_sq(i,j))))
@@ -2804,6 +2807,9 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
     if (CS%use_Leithy) then
       ALLOC_(CS%m_const_leithy(isd:ied,jsd:jed)) ; CS%m_const_leithy(:,:) = 0.0
       ALLOC_(CS%m_leithy_max(isd:ied,jsd:jed)) ; CS%m_leithy_max(:,:) = 0.0
+      ALLOC_(CS%Iwts(isd:ied,jsd:jed)) ; CS%Iwts(:,:) = 0.0
+      ALLOC_(CS%Iwts_u(IsdB:IedB,jsd:jed)) ; CS%Iwts_u(:,:) = 0.0
+      ALLOC_(CS%Iwts_v(isd:ied,JsdB:JedB)) ; CS%Iwts_v(:,:) = 0.0
     endif
     if (CS%Re_Ah > 0.0) then
       ALLOC_(CS%Re_Ah_const_xx(isd:ied,jsd:jed)) ; CS%Re_Ah_const_xx(:,:) = 0.0
@@ -2981,6 +2987,18 @@ subroutine hor_visc_init(Time, G, GV, US, param_file, diag, CS, ADp)
       min_grid_sp_h4 = min(grid_sp_h2**2, min_grid_sp_h4)
     enddo ; enddo
     call min_across_PEs(min_grid_sp_h4)
+
+    if (CS%use_Leithy) then
+      do j=js,je ; do i=is,ie; if (G%mask2dT(i,j) > 0.0) then
+        CS%Iwts(i,j) = 1.0 / (sum_5x5(G%mask2dT(i-2:i+2,j-2:j+2)) + 1.0E-32)
+      endif ; enddo ; enddo
+      do j=js,je ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.0) then
+        CS%Iwts_u(I,j) = 1.0 / (sum_5x5(G%mask2dCu(I-2:I+2,j-2:j+2)) + 1.0E-32)
+      endif ; enddo ; enddo
+      do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.0) then
+        CS%Iwts_v(i,J) = 1.0 / (sum_5x5(G%mask2dCv(i-2:i+2,J-2:J+2)) + 1.0E-32)
+      endif ; enddo ; enddo
+    endif
 
     do J=js-1,Jeq ; do I=is-1,Ieq
       grid_sp_q2 = (2.0*CS%dx2q(I,J)*CS%dy2q(I,J)) / (CS%dx2q(I,J)+CS%dy2q(I,J))
@@ -3396,7 +3414,7 @@ function sum_5x5(x) result(sum_x)
   sum_partial = ((x(1,1) + x(5,5)) + (x(1,5) + x(5,1)))
   sum_partial = sum_partial + 6.*((x(3,1) + x(1,3)) + (x(3,5) + x(5,3)))
   sum_partial = sum_partial + 36.*x(3,3)
-  sum_partial = sum_partial + 16*((x(2,2) + x(4,4)) + (x(2,4) + x(4,2)))
+  sum_partial = sum_partial + 16.*((x(2,2) + x(4,4)) + (x(2,4) + x(4,2)))
   sum_x = 4.*( ((x(1,2) + x(2,1)) + (x(1,4) + x(4,1))) + &
                ((x(5,2) + x(2,5)) + (x(5,4) + x(4,5))) )
   sum_x = sum_x + 24.*((x(2,3) + x(3,2)) + (x(4,3) + x(3,4)))
@@ -3409,7 +3427,8 @@ end function
 !! Note that this subroutine does not conserve mass, so don't use it in situations where you
 !! need conservation.  Also note that it assumes that the input field has valid values in the
 !! first two halo points upon entry.
-subroutine smooth_x9_h(G, field_h, zero_land)
+subroutine smooth_x9_h(CS, G, field_h, zero_land)
+  type(hor_visc_CS),                intent(in)    :: CS        !< Control structure
   type(ocean_grid_type),            intent(in)    :: G         !< Ocean grid
   real, dimension(SZI_(G),SZJ_(G)), intent(inout) :: field_h   !< h-point field to be smoothed [arbitrary]
   logical,                optional, intent(in)    :: zero_land !< If present and false, return the average
@@ -3418,9 +3437,9 @@ subroutine smooth_x9_h(G, field_h, zero_land)
                                                                !! land points and include them in the averages.
 
   ! Local variables
-  real :: fh_prev(SZI_(G),SZJ_(G))  ! Copy of the input value of the h-point field [arbitrary]
-  real :: Iwts             ! The inverse of the sum of the weights [nondim]
-  logical :: zero_land_val ! The value of the zero_land optional argument or .true. if it is absent.
+  real :: fh_prev(SZI_(G),SZJ_(G))      ! Copy of the input value of the h-point field [arbitrary]
+  real :: Iwts_zl = 0.00390625          ! The inverse of the sum of the weights zeroing land, = 1/256 [nondim]
+  logical :: zero_land_val              ! The value of the zero_land optional argument or .true. if it is absent.
   integer :: i, j, is, ie, js, je
 
   is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec
@@ -3429,11 +3448,15 @@ subroutine smooth_x9_h(G, field_h, zero_land)
 
   fh_prev(:,:) = field_h(:,:)
   ! apply smoothing on field_h using rotationally symmetric expressions.
-  do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
-    Iwts = 0.00390625 ! 1/256
-    if (.not. zero_land_val) Iwts = 1.0 / (sum_5x5(G%mask2dT(i-2:i+2,j-2:j+2)) + 1.0E-32)
-    field_h(i,j) = Iwts * sum_5x5(fh_prev(i-2:i+2,j-2:j+2) * G%mask2dT(i-2:i+2,j-2:j+2))
-  endif ; enddo ; enddo
+  if (zero_land_val) then
+    do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
+        field_h(i,j) = Iwts_zl * sum_5x5(fh_prev(i-2:i+2,j-2:j+2) * G%mask2dT(i-2:i+2,j-2:j+2))
+    endif ; enddo ; enddo
+  else
+    do j=js,je ; do i=is,ie ; if (G%mask2dT(i,j) > 0.0) then
+        field_h(i,j) = CS%Iwts(i,j) * sum_5x5(fh_prev(i-2:i+2,j-2:j+2) * G%mask2dT(i-2:i+2,j-2:j+2))
+    endif ; enddo ; enddo
+  endif
 
 end subroutine smooth_x9_h
 
@@ -3442,7 +3465,8 @@ end subroutine smooth_x9_h
 !! Note that this subroutine does not conserve angular momentum, so don't use it
 !! in situations where you need conservation.  Also note that it assumes that the
 !! input fields have valid values in the first two halo points upon entry.
-subroutine smooth_x9_uv(G, field_u, field_v, zero_land)
+subroutine smooth_x9_uv(CS, G, field_u, field_v, zero_land)
+  type(hor_visc_CS),                 intent(in)    :: CS        !< Control structure
   type(ocean_grid_type),             intent(in)    :: G         !< Ocean grid
   real, dimension(SZIB_(G),SZJ_(G)), intent(inout) :: field_u   !< u-point field to be smoothed [arbitrary]
   real, dimension(SZI_(G),SZJB_(G)), intent(inout) :: field_v   !< v-point field to be smoothed [arbitrary]
@@ -3452,10 +3476,10 @@ subroutine smooth_x9_uv(G, field_u, field_v, zero_land)
                                                                 !! land points and include them in the averages.
 
   ! Local variables.
-  real :: fu_prev(SZIB_(G),SZJ_(G))  ! Copy of the input value of the u-point field [arbitrary]
-  real :: fv_prev(SZI_(G),SZJB_(G))  ! Copy of the input value of the v-point field [arbitrary]
-  real :: Iwts             ! The inverse of the sum of the weights [nondim]
-  logical :: zero_land_val ! The value of the zero_land optional argument or .true. if it is absent.
+  real :: fu_prev(SZIB_(G),SZJ_(G))     ! Copy of the input value of the u-point field [arbitrary]
+  real :: fv_prev(SZI_(G),SZJB_(G))     ! Copy of the input value of the v-point field [arbitrary]
+  real :: Iwts_zl = 0.00390625          ! The inverse of the sum of the weights zeroing land, = 1/256 [nondim]
+  logical :: zero_land_val              ! The value of the zero_land optional argument or .true. if it is absent.
   integer :: i, j, is, ie, js, je, Isq, Ieq, Jsq, Jeq
 
   is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec
@@ -3465,19 +3489,29 @@ subroutine smooth_x9_uv(G, field_u, field_v, zero_land)
 
   fu_prev(:,:) = field_u(:,:)
   ! apply smoothing on field_u using the original non-rotationally symmetric expressions.
-  do j=js,je ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.0) then
-    Iwts = 0.00390625 ! 1/256
-    if (.not. zero_land_val) Iwts = 1.0 / (sum_5x5(G%mask2dCu(I-2:I+2,j-2:j+2)) + 1.0E-32)
-    field_u(I,j) = Iwts * sum_5x5(fu_prev(I-2:I+2,j-2:j+2) * G%mask2dCu(I-2:I+2,j-2:j+2))
-  endif ; enddo ; enddo
+  if (zero_land_val) then
+    do j=js,je ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.0) then
+      field_u(I,j) = Iwts_zl * sum_5x5(fu_prev(I-2:I+2,j-2:j+2) * G%mask2dCu(I-2:I+2,j-2:j+2))
+    endif ; enddo ; enddo
+  else
+    do j=js,je ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.0) then
+      field_u(I,j) = CS%Iwts_u(I,j) * &
+                     sum_5x5(fu_prev(I-2:I+2,j-2:j+2) * G%mask2dCu(I-2:I+2,j-2:j+2))
+    endif ; enddo ; enddo
+  endif
 
   fv_prev(:,:) = field_v(:,:)
   ! apply smoothing on field_v using the original non-rotationally symmetric expressions.
-  do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.0) then
-    Iwts = 0.00390625 ! 1/256
-    if (.not. zero_land_val) Iwts = 1.0 / (sum_5x5(G%mask2dCv(i-2:i+2,J-2:J+2)) + 1.0E-32)
-    field_v(i,J) = Iwts * sum_5x5(fv_prev(i-2:i+2,J-2:J+2) * G%mask2dCv(i-2:i+2,J-2:J+2))
-  endif ; enddo ; enddo
+  if (zero_land_val) then
+    do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.0) then
+      field_v(i,J) = Iwts_zl * sum_5x5(fv_prev(i-2:i+2,J-2:J+2) * G%mask2dCv(i-2:i+2,J-2:J+2))
+    endif ; enddo ; enddo
+  else
+    do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.0) then
+      field_v(i,J) = CS%Iwts_v(i,J) * &
+                     sum_5x5(fv_prev(i-2:i+2,J-2:J+2) * G%mask2dCv(i-2:i+2,J-2:J+2))
+    endif ; enddo ; enddo
+  endif
 
 end subroutine smooth_x9_uv
 
@@ -3522,6 +3556,9 @@ subroutine hor_visc_end(CS)
     if (CS%use_Leithy) then
       DEALLOC_(CS%m_const_leithy)
       DEALLOC_(CS%m_leithy_max)
+      DEALLOC_(CS%Iwts)
+      DEALLOC_(CS%Iwts_u)
+      DEALLOC_(CS%Iwts_v)
     endif
     if (CS%Re_Ah > 0.0) then
       DEALLOC_(CS%Re_Ah_const_xx) ; DEALLOC_(CS%Re_Ah_const_xy)
