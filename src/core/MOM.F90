@@ -1628,7 +1628,7 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
     fluxes%fluxes_used = .true.
 
     if (CS%stoch_CS%do_skeb) then
-       call apply_skeb(CS%G,CS%GV,CS%stoch_CS,CS%u,CS%v,CS%h,CS%tv,dtdia,Time_end_thermo)
+       call apply_skeb(G, GV, US, CS%stoch_CS, u, v, h, tv, dtdia, Time_end_thermo)
     endif
 
     if (showCallTree) call callTree_waypoint("finished diabatic (step_MOM_thermo)")
@@ -3483,7 +3483,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   endif
 
   ! initialize stochastic physics
-  call stochastics_init(CS%dt_therm, CS%G, CS%GV, CS%stoch_CS, param_file, diag, Time)
+  call stochastics_init(CS%dt_therm, CS%G, CS%GV, US, CS%stoch_CS, param_file, diag, Time)
 
   call callTree_leave("initialize_MOM()")
   call cpu_clock_end(id_clock_init)
