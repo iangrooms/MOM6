@@ -538,7 +538,7 @@ end subroutine smooth_x9_uv
 !! from Laplacian and biharmonic viscosities as computed within the horizontal viscosity module.
 !! If neither <code>SKEB_USE_GM</code> nor <code>SKEB_USE_FRICT</code> is true, then the code
 !! computes the dissipation rate as if it came from a lateral harmonic viscosity with
-!! coefficient 1 (MKS units). The only thoroughly tested SKEB option at this point is 
+!! coefficient 1 (MKS units). The only thoroughly tested SKEB option at this point is
 !! <code>SKEB_USE_GM</code>.
 !!
 !! The contributions to the backscatter rate are smoothed before use. One smoothing pass uses a
