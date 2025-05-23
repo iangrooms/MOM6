@@ -1013,7 +1013,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   !$OMP default(shared) &
   !$OMP private(i, j, k, keep_going, line_is_empty, dh, &
   !$OMP   grid_dsd, absf, h_sml, h_big, grd_b, r_wpup, psi_mag, IhTot, &
-  !$OMP   sigint, muzb, muza, hAtVel, Rml_int, SpV_int)
+  !$OMP   sigint, muzb, muza, hAtVel, Rml_int, SpV_int, rho_ml, SpV_ml, dmu )
 
   !$OMP do
   do j=js-1,je+1
@@ -1779,7 +1779,7 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
               "The variable name for Cr field.", &
               default="Cr")
       filename = trim(inputdir) // "/" // trim(filename)
-      call MOM_read_data(filename, varname, CS%Cr_space, G%domain)
+      call MOM_read_data(filename, varname, CS%Cr_space, G%domain, scale=1.0)
       call pass_var(CS%Cr_space, G%domain)
     endif
     call closeParameterBlock(param_file) ! The remaining parameters do not have MLE% prepended
