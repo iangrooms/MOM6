@@ -65,7 +65,7 @@ type, public:: stochastic_CS
   real, allocatable :: sppt_wts(:,:)  !< Random pattern for ocean SPPT
                                       !! tendencies with a number between 0 and 2 [nondim]
   real, allocatable :: skeb_wts(:,:)  !< Random pattern of lengthscales for ocean SKEB in mks units [m]
-                                      ! Note that SKEB_wts is set via external code in mks units.
+                                      !! Note that SKEB_wts is set via external code in mks units.
   real, allocatable :: epbl1_wts(:,:) !< Random pattern for K.E. generation [nondim]
   real, allocatable :: epbl2_wts(:,:) !< Random pattern for K.E. dissipation [nondim]
   type(time_type), pointer :: Time !< Pointer to model time (needed for sponges)
@@ -79,11 +79,15 @@ type, public:: stochastic_CS
                                                             !! stochastic velocity increment
                                                             !! range [0,1], [nondim]
 
+  ! Weights for smoothing skeb_diss
+  real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: Isum_area_wts, &  !< One over the 3x3 sum of area_wt [L-2 ~> m-2]
+                                               area_wt           !< Masked h cell areas. [L2 ~> m2]
+
 end type stochastic_CS
 
 contains
 
-!!   This subroutine initializes the stochastics physics control structure.
+!>   This subroutine initializes the stochastics physics control structure.
 subroutine stochastics_init(dt, grid, GV, US, CS, param_file, diag, Time)
   real, intent(in)                       :: dt      !< time step [T ~> s]
   type(ocean_grid_type),   intent(in)    :: grid    !< horizontal grid information
@@ -104,9 +108,11 @@ subroutine stochastics_init(dt, grid, GV, US, CS, param_file, diag, Time)
   integer :: nyT, nyB          ! number of y-points including halo
   integer :: default_answer_date ! The default setting for the various ANSWER_DATE flags.
   integer :: i, j, k           ! loop indices
-  real    :: tmp(grid%isdB:grid%iedB,grid%jsdB:grid%jedB) ! Used to construct tapers
+  real    :: tmp(grid%isdB:grid%iedB,grid%jsdB:grid%jedB) ! Used to construct tapers and weights
   integer :: taper_width       ! Width (in cells) of the taper that brings the stochastic velocity
                                ! increments to 0 at the boundary.
+  real    :: sum_area_wts      ! A rotationally symmetric sum of the surrounding area weights
+                               ! that are used to filter skeb_diss [L2 ~> m2]
 
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
@@ -259,6 +265,21 @@ subroutine stochastics_init(dt, grid, GV, US, CS, param_file, diag, Time)
   if (CS%id_skeb_taperu > 0) call post_data(CS%id_skeb_taperu, CS%taperCu, CS%diag, .true.)
   if (CS%id_skeb_taperv > 0) call post_data(CS%id_skeb_taperv, CS%taperCv, CS%diag, .true.)
 
+  ! Initialize the smoothing weights
+  if ((CS%do_skeb) .and. CS%skeb_npass >= 1) then
+    ALLOC_(CS%area_wt(grid%isd:grid%ied,grid%jsd:grid%jed)) ; CS%area_wt(:,:) = 0.0
+    ALLOC_(CS%Isum_area_wts(grid%isd:grid%ied,grid%jsd:grid%jed)) ; CS%Isum_area_wts(:,:) = 0.0
+    do j=grid%jsc-2,grid%jec+2 ; do i=grid%isc-2,grid%iec+2
+      CS%area_wt(i,j) = grid%mask2dT(i,j)*grid%areaT(i,j)
+    enddo ; enddo
+    do j=grid%jsc-1,grid%jec+1 ; do i=grid%isc-1,grid%iec+1
+      sum_area_wts = CS%area_wt(i,j) + &
+       (((CS%area_wt(i-1,j) + CS%area_wt(i+1,j)) + (CS%area_wt(i,j-1) + CS%area_wt(i,j+1))) + &
+        ((CS%area_wt(i-1,j-1) + CS%area_wt(i+1,j+1)) + (CS%area_wt(i-1,j+1) + CS%area_wt(i+1,j-1))))
+      CS%Isum_area_wts(i,j) = 1.0 / (sum_area_wts + 1.e-16*US%m_to_L**2)
+    enddo ; enddo
+  endif
+
   if (CS%do_sppt .OR. CS%pert_epbl .OR. CS%do_skeb) &
     call MOM_mesg('            === COMPLETED MOM STOCHASTIC INITIALIZATION =====')
 
@@ -266,11 +287,7 @@ subroutine stochastics_init(dt, grid, GV, US, CS, param_file, diag, Time)
 
 end subroutine stochastics_init
 
-!> update_ocean_model uses the forcing in Ice_ocean_boundary to advance the
-!! ocean model's state from the input value of Ocean_state (which must be for
-!! time time_start_update) for a time interval of Ocean_coupling_time_step,
-!! returning the publicly visible ocean surface properties in Ocean_sfc and
-!! storing the new ocean properties in Ocean_state.
+!> Advances the stochastic patterns one time step
 subroutine update_stochastics(CS)
   type(stochastic_CS),      intent(inout) :: CS        !< diabatic control structure
   call callTree_enter("update_stochastics(), MOM_stochastics.F90")
@@ -282,6 +299,7 @@ subroutine update_stochastics(CS)
 
 end subroutine update_stochastics
 
+!> Adds a stochastic increment (backscatter) to the input velocity field
 subroutine apply_skeb(grid, GV, US, CS, uc, vc, thickness, tv, dt, Time_end)
 
   type(ocean_grid_type),   intent(in)    :: grid   !< ocean grid structure
@@ -302,7 +320,6 @@ subroutine apply_skeb(grid, GV, US, CS, uc, vc, thickness, tv, dt, Time_end)
   real, dimension(SZI_(grid) ,SZJB_(grid),SZK_(GV)) :: vstar    !< Stochastic v velocity increment [L T-1 ~> m s-1]
   real, dimension(SZI_(grid),SZJ_(grid))            :: diss_tmp !< Temporary array used in smoothing skeb_diss
                                                                 !! [L2 T-3 ~> m2 s-2]
-  real, dimension(SZI_(grid),SZJ_(grid))            :: area_wt  !< Masked cell areas used in spatial filter [L2 ~> m2]
   real, dimension(3,3) :: local_weights                         !< 3x3 stencil weights used in smoothing skeb_diss
                                                                 !! [L2 ~> m2]
 
@@ -312,8 +329,6 @@ subroutine apply_skeb(grid, GV, US, CS, uc, vc, thickness, tv, dt, Time_end)
   real    :: kh   ! A smooothing factor [nondim]
   real    :: sum_wtd_skeb_diss ! The rotationally symmetric sum of the surrounding values of skeb times
                   ! the area weights used to filter skeb_diss [L4 T-3 ~> m4 s-3]
-  real    :: sum_area_wts  ! A rotationally symmetric sum of the surrounding area weights
-                  ! that are used to filter skeb_diss [L2 ~> m2]
   integer :: i, j, k, iter
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
 
@@ -360,12 +375,6 @@ subroutine apply_skeb(grid, GV, US, CS, uc, vc, thickness, tv, dt, Time_end)
     endif
   endif ! Sets CS%skeb_diss in [L2 T-3 ~> m2 s-3] without GM or FrictWork
 
-  if (CS%skeb_npass >= 1) then
-    do j=grid%jsc-2,grid%jec+2 ; do i=grid%isc-2,grid%iec+2
-      area_wt(i,j) = grid%mask2dT(i,j)*grid%areaT(i,j)
-    enddo ; enddo
-  endif
-
   ! smooth dissipation skeb_npass times
   do iter=1,CS%skeb_npass
     if (mod(iter,2) == 1) call pass_var(CS%skeb_diss, grid%domain)
@@ -373,7 +382,7 @@ subroutine apply_skeb(grid, GV, US, CS, uc, vc, thickness, tv, dt, Time_end)
       if (CS%answer_date < 20250701) then
         ! Do the filter with expressions that do not preserve rotational symmetry.
         do j=grid%jsc-1,grid%jec+1 ; do i=grid%isc-1,grid%iec+1
-          local_weights(:,:) = area_wt(i-1:i+1,j-1:j+1)
+          local_weights(:,:) = CS%area_wt(i-1:i+1,j-1:j+1)
           diss_tmp(i,j) = sum(local_weights(:,:)*CS%skeb_diss(i-1:i+1,j-1:j+1,k)) / &
                          (sum(local_weights) + 1.e-16*US%m_to_L**2)
         enddo ; enddo
@@ -381,15 +390,12 @@ subroutine apply_skeb(grid, GV, US, CS, uc, vc, thickness, tv, dt, Time_end)
         ! This spatial filter preserves rotational symmeetry (including with FMAs), but is
         ! mathematically equivalent to the older sum-based form above
         do j=grid%jsc-1,grid%jec+1 ; do i=grid%isc-1,grid%iec+1
-          sum_area_wts = area_wt(i,j) + &
-               (((area_wt(i-1,j) + area_wt(i+1,j)) + (area_wt(i,j-1) + area_wt(i,j+1))) + &
-                ((area_wt(i-1,j-1) + area_wt(i+1,j+1)) + (area_wt(i-1,j+1) + area_wt(i+1,j-1))))
-          sum_wtd_skeb_diss =  CS%skeb_diss(i,j,k) * area_wt(i+1,j) + &
-               ((( (CS%skeb_diss(i-1,j,k) * area_wt(i-1,j)) + (CS%skeb_diss(i+1,j,k) * area_wt(i+1,j)) ) + &
-                 ( (CS%skeb_diss(i,j-1,k) * area_wt(i,j-1)) + (CS%skeb_diss(i,j+1,k) * area_wt(i,j+1)) )) + &
-                (( (CS%skeb_diss(i-1,j-1,k) * area_wt(i-1,j-1)) + (CS%skeb_diss(i-1,j-1,k) * area_wt(i+1,j+1)) ) + &
-                 ( (CS%skeb_diss(i-1,j+1,k) * area_wt(i-1,j+1)) + (CS%skeb_diss(i+1,j-1,k) * area_wt(i+1,j-1)) )))
-          diss_tmp(i,j) = sum_wtd_skeb_diss / (sum_area_wts + 1.e-16*US%m_to_L**2)
+          sum_wtd_skeb_diss =  CS%skeb_diss(i,j,k) * CS%area_wt(i+1,j) + &
+             ((( (CS%skeb_diss(i-1,j,k) * CS%area_wt(i-1,j)) + (CS%skeb_diss(i+1,j,k) * CS%area_wt(i+1,j)) ) + &
+               ( (CS%skeb_diss(i,j-1,k) * CS%area_wt(i,j-1)) + (CS%skeb_diss(i,j+1,k) * CS%area_wt(i,j+1)) )) + &
+              (( (CS%skeb_diss(i-1,j-1,k) * CS%area_wt(i-1,j-1)) + (CS%skeb_diss(i-1,j-1,k) * CS%area_wt(i+1,j+1)) ) + &
+               ( (CS%skeb_diss(i-1,j+1,k) * CS%area_wt(i-1,j+1)) + (CS%skeb_diss(i+1,j-1,k) * CS%area_wt(i+1,j-1)) )))
+          diss_tmp(i,j) = sum_wtd_skeb_diss * CS%Isum_area_wts(i,j)
         enddo ; enddo
       endif
       do j=grid%jsc-1,grid%jec+1 ; do i=grid%isc-1,grid%iec+1
@@ -511,6 +517,33 @@ subroutine smooth_x9_uv(G, field_u, field_v, zero_land)
   enddo
 
 end subroutine smooth_x9_uv
-
+!> \namespace mom_stochastics
+!!
+!! This file contains subroutines that implement some stochastic parameterizations in MOM6.
+!! SPPT perturbations of the tendencies of S and T are turned on using <code>DO_SPPT=True</code>.
+!! Stochastic perturbations in ePBL are turned on using <code>PERT_EPBL=True</code>.
+!! Stochastic kinetic energy backscatter (SKEB) via the Stochastic GM+E scheme is turned on using
+!! <code>DO_SKEB=True</code>. For all three schemes the spatial and temporal correlation structure
+!! of the associated random fields is controlled from the <code>nam_stochy</code> namelist used by
+!! the external <code>stochastic_physics</code> package, which is called by subroutines in this
+!! module.
+!!
+!! The SKEB backscatter can be set in a variety of ways. If <code>SKEB_USE_GM=True</code> then
+!! <code>SKEB_GM_COEF</code> times the GM work rate will be added to the backscatter rate. (The
+!! vertical structure for this component of backscatter is the so-called EBT struct.) If
+!! <code>SKEB_USE_FRICT=True</code> then <code>SKEB_FRICT_COEF</code> times the work rate from
+!! lateral viscosity will be added to the backscatter rate. The code uses the total contribution
+!! from Laplacian and biharmonic viscosities as computed within the horizontal viscosity module.
+!! If neither <code>SKEB_USE_GM</code> nor <code>SKEB_USE_FRICT</code> is true, then the code
+!! computes the dissipation rate as if it came from a lateral harmonic viscosity with
+!! coefficient 1 (MKS units). The only thoroughly tested SKEB option at this point is
+!! <code>SKEB_USE_GM</code>.
+!!
+!! The contributions to the backscatter rate are smoothed before use. One smoothing pass uses a
+!! 3x3 moving average with weights proportional to the h-cell areas. The number of smoothing passes
+!! is controlled by <code>SKEB_NPASS</code>.
+!!
+!! A taper is applied to the SKEB velocity increments (equivalently to the SKEB stochastic forcing).
+!! The taper zeros out the increments near land cells. The width of this taper can be controlled using
+!! <code>SKEB_TAPER_WIDTH</code>.
 end module MOM_stochastics
-
