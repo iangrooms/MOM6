@@ -329,16 +329,14 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
         ! First, advect zonally.
         call advect_x(Reg%Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
                       isv, iev, jsv-stencil, jev+stencil, k, G, GV, US, &
-                      CS%usePPM, CS%useHuynh, flux_type_ctrl, advect_this_tracer, &
-                      local_advect_scheme)
+                      flux_type_ctrl, advect_this_tracer, local_advect_scheme)
       endif ; enddo
 
       !$OMP do ordered
       do k=1,nz ; if (domore_k(k) > 0) then
         !  Next, advect meridionally.
         call advect_y(Reg%Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
-                      isv, iev, jsv, jev, k, G, GV, US, &
-                      CS%usePPM, CS%useHuynh, flux_type_ctrl, advect_this_tracer, &
+                      isv, iev, jsv, jev, k, G, GV, US, flux_type_ctrl, advect_this_tracer, &
                       local_advect_scheme)
 
         ! Update domore_k(k) for the next iteration
@@ -355,16 +353,14 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
         ! First, advect meridionally.
         call advect_y(Reg%Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
                       isv-stencil, iev+stencil, jsv, jev, k, G, GV, US, &
-                      CS%usePPM, CS%useHuynh, flux_type_ctrl, advect_this_tracer, &
-                      local_advect_scheme)
+                      flux_type_ctrl, advect_this_tracer, local_advect_scheme)
       endif ; enddo
 
       !$OMP do ordered
       do k=1,nz ; if (domore_k(k) > 0) then
         ! Next, advect zonally.
         call advect_x(Reg%Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
-                      isv, iev, jsv, jev, k, G, GV, US, &
-                      CS%usePPM, CS%useHuynh, flux_type_ctrl, advect_this_tracer, &
+                      isv, iev, jsv, jev, k, G, GV, US, flux_type_ctrl, advect_this_tracer, &
                       local_advect_scheme)
 
         ! Update domore_k(k) for the next iteration
@@ -411,8 +407,8 @@ end subroutine advect_tracer
 !> This subroutine does 1-d flux-form advection in the zonal direction using
 !! a monotonic piecewise linear scheme.
 subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
-                    is, ie, js, je, k, G, GV, US, usePPM, useHuynh, &
-                    flux_type, advect_this_tracer, advect_schemes)
+                    is, ie, js, je, k, G, GV, US, flux_type, advect_this_tracer,  &
+                    advect_schemes)
   type(ocean_grid_type),                     intent(inout) :: G    !< The ocean's grid structure
   type(verticalGrid_type),                   intent(in)    :: GV   !< The ocean's vertical grid structure
   integer,                                   intent(in)    :: ntr  !< The number of tracers
@@ -433,9 +429,6 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
   integer,                                   intent(in)    :: je  !< The ending tracer j-index to work on
   integer,                                   intent(in)    :: k   !< The k-level to work on
   type(unit_scale_type),                     intent(in)    :: US  !< A dimensional unit scaling type
-  logical,                                   intent(in)    :: usePPM !< If true, use PPM instead of PLM
-  logical,                                   intent(in)    :: useHuynh !< If true, use the Huynh scheme
-                                                                     !! for PPM interface values
   integer,                                   intent(in)    :: flux_type !< Indicates whether uhtr, vhtr are the flux due to
                                                                         !! the residual (= 0), resolved (= 1), or parameterized (= 2)
                                                                         !! flow
@@ -861,8 +854,8 @@ end subroutine advect_x
 !> This subroutine does 1-d flux-form advection using a monotonic piecewise
 !! linear scheme.
 subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
-                    is, ie, js, je, k, G, GV, US, usePPM, useHuynh, &
-                    flux_type, advect_this_tracer, advect_schemes)
+                    is, ie, js, je, k, G, GV, US, flux_type, advect_this_tracer, &
+                    advect_schemes)
   type(ocean_grid_type),                     intent(inout) :: G    !< The ocean's grid structure
   type(verticalGrid_type),                   intent(in)    :: GV   !< The ocean's vertical grid structure
   integer,                                   intent(in)    :: ntr !< The number of tracers
@@ -883,9 +876,6 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
   integer,                                   intent(in)    :: je  !< The ending tracer j-index to work on
   integer,                                   intent(in)    :: k   !< The k-level to work on
   type(unit_scale_type),                     intent(in)    :: US  !< A dimensional unit scaling type
-  logical,                                   intent(in)    :: usePPM !< If true, use PPM instead of PLM
-  logical,                                   intent(in)    :: useHuynh !< If true, use the Huynh scheme
-                                                                     !! for PPM interface values
   integer,                                   intent(in)    :: flux_type !< Indicates whether uhtr, vhtr are the flux due to
                                                                         !! the residual (= 0), resolved (= 1), or parameterized (= 2)
                                                                         !! flow
