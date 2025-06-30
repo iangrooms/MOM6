@@ -23,10 +23,10 @@ type, public :: tracer_type
                                                               !! [CU H L2 T-1 ~> conc m3 s-1 or conc kg s-1]
   real, dimension(:,:,:), pointer :: ad_y_resolved  => NULL() !< diagnostic array for y-advective resolved tracer flux
                                                               !! [CU H L2 T-1 ~> conc m3 s-1 or conc kg s-1]
-  real, dimension(:,:,:), pointer :: ad_x_param     => NULL() !< diagnostic array for x-advective parameterized tracer flux
-                                                              !! [CU H L2 T-1 ~> conc m3 s-1 or conc kg s-1]
-  real, dimension(:,:,:), pointer :: ad_y_param     => NULL() !< diagnostic array for y-advective parameterized tracer flux
-                                                              !! [CU H L2 T-1 ~> conc m3 s-1 or conc kg s-1]
+  real, dimension(:,:,:), pointer :: ad_x_param     => NULL() !< diagnostic array for x-advective parameterized tracer
+                                                              !! flux [CU H L2 T-1 ~> conc m3 s-1 or conc kg s-1]
+  real, dimension(:,:,:), pointer :: ad_y_param     => NULL() !< diagnostic array for y-advective parameterized tracer
+                                                              !! flux [CU H L2 T-1 ~> conc m3 s-1 or conc kg s-1]
   real, dimension(:,:),   pointer :: ad2d_x         => NULL() !< diagnostic vertical sum x-advective tracer flux
                                                               !! [CU H L2 T-1 ~> conc m3 s-1 or conc kg s-1]
   real, dimension(:,:),   pointer :: ad2d_y         => NULL() !< diagnostic vertical sum y-advective tracer flux

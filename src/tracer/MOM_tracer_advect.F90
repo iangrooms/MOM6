@@ -244,7 +244,6 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
     enddo
     !$OMP end parallel
   elseif (flux_type_ctrl == 1) then ! Flux is resolved
-    !$OMP do
     do m=1,ntr
       if (associated(Reg%Tr(m)%ad_x_resolved)) then
         Reg%Tr(m)%ad_x_resolved(:,:,:) = 0.0
@@ -255,9 +254,7 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
         advect_this_tracer(m) = .true. ! advect this tracer
       endif
     enddo
-    !$OMP end parallel
   elseif (flux_type_ctrl == 2) then ! Flux is parameterized
-    !$OMP do
     do m=1,ntr
       if (associated(Reg%Tr(m)%ad_x_param)) then
         Reg%Tr(m)%ad_x_param(:,:,:) = 0.0
@@ -268,7 +265,6 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
         advect_this_tracer(m) = .true. ! advect this tracer
       endif
     enddo
-    !$OMP end parallel
   else
     call MOM_error(FATAL, &
           "Inconsistent flux type in advect_tracer. Must be of 0 (residual), 1 (resolved), or 2 (parameterized)")
@@ -429,9 +425,9 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
   integer,                                   intent(in)    :: je  !< The ending tracer j-index to work on
   integer,                                   intent(in)    :: k   !< The k-level to work on
   type(unit_scale_type),                     intent(in)    :: US  !< A dimensional unit scaling type
-  integer,                                   intent(in)    :: flux_type !< Indicates whether uhtr, vhtr are the flux due to
-                                                                        !! the residual (= 0), resolved (= 1), or parameterized (= 2)
-                                                                        !! flow
+  integer,                                   intent(in)    :: flux_type !< Indicates whether uhtr, vhtr are the flux
+                                                                        !! due to the residual (= 0), resolved (= 1),
+                                                                        !! or parameterized (= 2) flow
   logical, dimension(ntr),                   intent(in)    :: advect_this_tracer !< If true, advect this tracer
   integer, dimension(ntr),                   intent(in)    :: advect_schemes !< list of advection schemes to use
 
@@ -876,9 +872,9 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
   integer,                                   intent(in)    :: je  !< The ending tracer j-index to work on
   integer,                                   intent(in)    :: k   !< The k-level to work on
   type(unit_scale_type),                     intent(in)    :: US  !< A dimensional unit scaling type
-  integer,                                   intent(in)    :: flux_type !< Indicates whether uhtr, vhtr are the flux due to
-                                                                        !! the residual (= 0), resolved (= 1), or parameterized (= 2)
-                                                                        !! flow
+  integer,                                   intent(in)    :: flux_type !< Indicates whether uhtr, vhtr are the flux
+                                                                  !! due to the residual (= 0), resolved (= 1),
+                                                                  !! or parameterized (= 2) flow
   logical, dimension(ntr),                   intent(in)    :: advect_this_tracer !< If true, advect this tracer
   integer, dimension(ntr),                   intent(in)    :: advect_schemes !< list of advection schemes to use
 
