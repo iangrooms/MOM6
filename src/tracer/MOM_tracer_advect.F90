@@ -242,7 +242,6 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
       if (associated(Reg%Tr(m)%ad2d_x)) Reg%Tr(m)%ad2d_x(:,:) = 0.0
       if (associated(Reg%Tr(m)%ad2d_y)) Reg%Tr(m)%ad2d_y(:,:) = 0.0
     enddo
-    !$OMP end parallel
   elseif (flux_type_ctrl == 1) then ! Flux is resolved
     do m=1,ntr
       if (associated(Reg%Tr(m)%ad_x_resolved)) then
@@ -269,6 +268,7 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
     call MOM_error(FATAL, &
           "Inconsistent flux type in advect_tracer. Must be of 0 (residual), 1 (resolved), or 2 (parameterized)")
   endif ! flux_type_ctrl
+  !$OMP end parallel
 
   isv = is ; iev = ie ; jsv = js ; jev = je
 
