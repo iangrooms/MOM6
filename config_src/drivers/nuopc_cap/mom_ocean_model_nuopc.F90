@@ -776,7 +776,7 @@ subroutine ocean_model_restart(OS, timestamp, restartname, stoch_restartname, nu
   endif
   if (present(stoch_restartname)) then
     if (OS%do_sppt .OR. OS%pert_epbl .OR. OS%do_skeb) then
-      call write_stoch_restart_ocn('RESTART/'//trim(stoch_restartname))
+      call write_stoch_restart_ocn(trim(stoch_restartname))
     endif
   endif
 

@@ -1932,7 +1932,7 @@ subroutine ModelAdvance(gcomp, rc)
 
         write(restartname,'(A,".mom6.r",A)') &
              trim(casename), timestamp
-        write(stoch_restartname,'(A,".ocn_stoch.r",A,".nc")') &
+        write(stoch_restartname,'(A,".mom6.r_stoch",A,".nc")') &
              trim(casename), timestamp
         call ESMF_LogWrite("MOM_cap: Writing restart :  "//trim(restartname), ESMF_LOGMSG_INFO)
         ! write restart file(s)
