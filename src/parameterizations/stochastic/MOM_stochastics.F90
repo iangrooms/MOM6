@@ -77,7 +77,8 @@ end type stochastic_CS
 contains
 
 !!   This subroutine initializes the stochastics physics control structure.
-subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
+subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time, input_restart_file)
+  use stochy_namelist_def, only : stoch_restfile
   real, intent(in)                       :: dt      !< time step [T ~> s]
   type(ocean_grid_type),   intent(in)    :: grid    !< horizontal grid information
   type(verticalGrid_type), intent(in)    :: GV      !< vertical grid structure
@@ -85,7 +86,8 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
   type(param_file_type),   intent(in)    :: param_file !< A structure to parse for run-time parameters
   type(diag_ctrl), target, intent(inout) :: diag    !< structure to regulate diagnostic output
   type(time_type), target                :: Time    !< model time
-
+  character(len=*),optional, intent(in)    :: input_restart_file !< If present, name of restart file to modify and read
+  
   ! Local variables
   integer, allocatable :: pelist(:) ! list of pes for this instance of the ocean
   integer :: mom_comm          ! list of pes for this instance of the ocean
@@ -163,6 +165,14 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
     nyT = grid%jed - grid%jsd + 1
     nxB = grid%iedB - grid%isdB + 1
     nyB = grid%jedB - grid%jsdB + 1
+    if(present(input_restart_file)) then
+       k = len_trim(input_restart_file)
+       i = index(input_restart_file, '.r.')
+       if (i>0) then
+          stoch_restfile = input_restart_file(1:i)//'r_stoch'//input_restart_file(i+2:k)
+       endif
+    endif
+
     call init_stochastic_physics_ocn(dt, grid%geoLonT, grid%geoLatT, nxT, nyT, GV%ke, &
                                      grid%geoLonBu, grid%geoLatBu, nxB, nyB, &
                                      CS%pert_epbl, CS%do_sppt, CS%do_skeb, pe_zero, mom_comm, iret)
