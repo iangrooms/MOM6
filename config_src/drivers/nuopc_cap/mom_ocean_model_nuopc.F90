@@ -62,6 +62,7 @@ use MOM_surface_forcing_nuopc, only : convert_IOB_to_forces, ice_ocn_bnd_type_ch
 use MOM_surface_forcing_nuopc, only : ice_ocean_boundary_type, surface_forcing_CS
 use MOM_surface_forcing_nuopc, only : forcing_save_restart
 use get_stochy_pattern_mod,  only : write_stoch_restart_ocn
+use stochy_data_mod,         only : stoch_restfile
 use iso_fortran_env,           only : int64
 
 #include <MOM_memory.h>
@@ -267,7 +268,8 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
   integer :: secs, days
   type(param_file_type) :: param_file !< A structure to parse for run-time parameters
   logical :: use_temperature
-
+  integer :: i, k
+  
   call callTree_enter("ocean_model_init(), ocean_model_MOM.F90")
   if (associated(OS)) then
     call MOM_error(WARNING, "ocean_model_init called with an associated "// &
@@ -282,6 +284,13 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
   call time_interp_external_init
 
   OS%Time = Time_in
+  if(present(input_restart_file)) then
+      k = len_trim(input_restart_file)
+      i = index(input_restart_file, '.r.')
+      if (i>0) then
+         stoch_restfile = input_restart_file(1:i)//'r_stoch'//input_restart_file(i+2:k)
+      endif
+  endif
   call initialize_MOM(OS%Time, Time_init, param_file, OS%dirs, OS%MOM_CSp, &
                       Time_in, offline_tracer_mode=OS%offline_tracer_mode, &
                       input_restart_file=input_restart_file, &
