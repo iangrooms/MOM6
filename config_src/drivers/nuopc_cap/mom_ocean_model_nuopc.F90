@@ -178,11 +178,12 @@ type, public :: ocean_state_type ; private
                               !! steps can span multiple coupled time steps.
   logical :: diabatic_first   !< If true, apply diabatic and thermodynamic
                               !! processes before time stepping the dynamics.
-  logical :: do_sppt         !< If true, stochastically perturb the diabatic and
-                             !! write restarts
-  logical :: pert_epbl       !< If true, then randomly perturb the KE dissipation and
-                             !! genration termsand write restarts
-
+  logical :: do_sppt          !< If true, stochastically perturb the diabatic
+                              !! tendencies and write restarts
+  logical :: pert_epbl        !< If true, then randomly perturb the KE dissipation and
+                              !! generation terms and write restarts
+  logical :: do_skeb          !< If true, stochastically perturb the ocean lateral
+                              !! velocity and write restarts
   real :: eps_omesh           !< Max allowable difference between ESMF mesh and MOM6
                               !! domain coordinates
 
@@ -443,6 +444,10 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
                  "If true, then stochastically perturb the kinetic energy "//&
                  "production and dissipation terms.  Amplitude and correlations are "//&
                  "controlled by the nam_stoch namelist in the UFS model only.", &
+                 default=.false.)
+  call get_param(param_file, mdl, "DO_SKEB", OS%do_skeb, &
+                 "If true, then stochastically perturb the currents "//&
+                 "using the stochastic kinetic energy backscatter scheme.",&
                  default=.false.)
 
   call close_param_file(param_file)
@@ -770,8 +775,8 @@ subroutine ocean_model_restart(OS, timestamp, restartname, stoch_restartname, nu
     endif
   endif
   if (present(stoch_restartname)) then
-    if (OS%do_sppt .OR. OS%pert_epbl) then
-      call write_stoch_restart_ocn('RESTART/'//trim(stoch_restartname))
+    if (OS%do_sppt .OR. OS%pert_epbl .OR. OS%do_skeb) then
+      call write_stoch_restart_ocn(trim(stoch_restartname))
     endif
   endif
 

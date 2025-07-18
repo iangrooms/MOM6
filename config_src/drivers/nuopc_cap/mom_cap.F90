@@ -1932,9 +1932,12 @@ subroutine ModelAdvance(gcomp, rc)
 
         write(restartname,'(A,".mom6.r",A)') &
              trim(casename), timestamp
+        write(stoch_restartname,'(A,".mom6.r_stoch",A,".nc")') &
+             trim(casename), timestamp
         call ESMF_LogWrite("MOM_cap: Writing restart :  "//trim(restartname), ESMF_LOGMSG_INFO)
         ! write restart file(s)
-        call ocean_model_restart(ocean_state, restartname=restartname, num_rest_files=num_rest_files)
+        call ocean_model_restart(ocean_state, restartname=restartname, &
+                stoch_restartname=stoch_restartname, num_rest_files=num_rest_files)
         if (localPet == 0) then
            ! Write name of restart file in the rpointer file - this is currently hard-coded for the ocean
           open(newunit=writeunit, file=rpointer_filename, form='formatted', status='unknown', iostat=iostat)
