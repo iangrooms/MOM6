@@ -269,7 +269,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
   type(param_file_type) :: param_file !< A structure to parse for run-time parameters
   logical :: use_temperature
   integer :: i, k
-  
+
   call callTree_enter("ocean_model_init(), ocean_model_MOM.F90")
   if (associated(OS)) then
     call MOM_error(WARNING, "ocean_model_init called with an associated "// &
