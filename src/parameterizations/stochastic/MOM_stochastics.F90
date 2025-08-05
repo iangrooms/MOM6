@@ -194,10 +194,10 @@ subroutine stochastics_init(dt, grid, GV, US, CS, param_file, diag, Time)
       return
     endif
 
-    if (CS%do_sppt) allocate(CS%sppt_wts(grid%isd:grid%ied,grid%jsd:grid%jed))
+    if ((CS%do_sppt) .or. (CS%do_skeb)) allocate(CS%sppt_wts(grid%isd:grid%ied,grid%jsd:grid%jed))
     if (CS%do_skeb) allocate(CS%skeb_wts(grid%isdB:grid%iedB,grid%jsdB:grid%jedB))
     if (CS%do_skeb) allocate(CS%skeb_diss(grid%isd:grid%ied,grid%jsd:grid%jed,GV%ke), source=0.)
-    if (CS%pert_epbl) then
+    if ((CS%pert_epbl) .or. (CS%do_skeb)) then
       allocate(CS%epbl1_wts(grid%isd:grid%ied,grid%jsd:grid%jed))
       allocate(CS%epbl2_wts(grid%isd:grid%ied,grid%jsd:grid%jed))
     endif
