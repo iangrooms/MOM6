@@ -244,7 +244,7 @@ subroutine tracer_hordiff(h, dt, MEKE, VarMix, visc, G, GV, US, CS, Reg, tv, do_
           Kh_loc = Kh_loc + MEKE%KhTr_fac*sqrt(MEKE%Kh(i,j)*MEKE%Kh(i+1,j))
         if (CS%KhTr_max > 0.) Kh_loc = min(Kh_loc, CS%KhTr_max)
         if (Resoln_scaled) &
-          Kh_loc = Kh_loc * 0.5*(VarMix%Res_fn_h(i,j) + VarMix%Res_fn_h(i+1,j))
+          Kh_loc = Kh_loc * VarMix%Res_fn_u(I,j)
         Kh_u(I,j,1) = max(Kh_loc, CS%KhTr_min)
         if (CS%KhTr_passivity_coeff>0.) then ! Apply passivity
           Rd_dx=0.5*( VarMix%Rd_dx_h(i,j)+VarMix%Rd_dx_h(i+1,j) ) ! Rd/dx at u-points
@@ -261,7 +261,7 @@ subroutine tracer_hordiff(h, dt, MEKE, VarMix, visc, G, GV, US, CS, Reg, tv, do_
           Kh_loc = Kh_loc + MEKE%KhTr_fac*sqrt(MEKE%Kh(i,j)*MEKE%Kh(i,j+1))
         if (CS%KhTr_max > 0.) Kh_loc = min(Kh_loc, CS%KhTr_max)
         if (Resoln_scaled) &
-          Kh_loc = Kh_loc * 0.5*(VarMix%Res_fn_h(i,j) + VarMix%Res_fn_h(i,j+1))
+          Kh_loc = Kh_loc * VarMix%Res_fn_v(i,J)
         Kh_v(i,J,1) = max(Kh_loc, CS%KhTr_min)
         if (CS%KhTr_passivity_coeff>0.) then ! Apply passivity
           Rd_dx = 0.5*( VarMix%Rd_dx_h(i,j)+VarMix%Rd_dx_h(i,j+1) ) ! Rd/dx at v-points
