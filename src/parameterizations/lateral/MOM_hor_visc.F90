@@ -1336,11 +1336,11 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
                 m_leithy(i,j) = CS%m_leithy_max(i,j)
               endif
             endif
+            if (CS%taper_leithy) then
+              ! Multiply m_leithy by taper function of depth
+              m_leithy(i,j) = m_leithy(i,j) * leithy_taper_function(CS, zc(i,j,k))
+            endif
           enddo ; enddo
-          if (CS%taper_leithy) then
-            ! Multiply m_leithy by taper function of depth
-            m_leithy(:,:) = m_leithy(:,:) * leithy_taper_function(CS, zc(:,:,k))
-          endif
 
           if (CS%smooth_Ah) then
             ! Smooth m_leithy.  A single call smoothes twice.
@@ -3304,20 +3304,20 @@ end subroutine hor_visc_init
 !! leithy_depth+leithy_width; and an interpolating cubic spline in between.
 function leithy_taper_function(CS, zc)
   type(hor_visc_CS), intent(in) :: CS      !< Control structure for horizontal viscosity
-  real,              intent(in) :: zc(:,:) !< depth of h-cell centersi [Z ~> m]
-  real :: leithy_taper_function(size(zc,dim=1),size(zc,dim=2)) ! Taper function evaluated at zc [nondim]
+  real,              intent(in) :: zc      !< depth of h-cell centersi [Z ~> m]
+  real :: leithy_taper_function            ! Taper function evaluated at zc [nondim]
 
   ! Local variables
-  real :: x(size(zc,dim=1),size(zc,dim=2)) ! 0 at top of transition and 1 at bottom [nondim]
+  real :: x                                ! 0 at top of transition and 1 at bottom [nondim]
 
   x = (zc - CS%leithy_depth) / CS%leithy_width
-  where (zc <= CS%leithy_depth)
+  if (zc <= CS%leithy_depth) then
     leithy_taper_function = 1.0
-  elsewhere (zc >= CS%leithy_depth + CS%leithy_width)
+  elseif (zc >= CS%leithy_depth + CS%leithy_width) then
     leithy_taper_function = 0.0
-  elsewhere
+  else
     leithy_taper_function = (x - 1.0)**2 * (1.0 + 2 * x)
-  end where
+  endif
 end function leithy_taper_function
 
 !> hor_visc_vel_stencil returns the horizontal viscosity input velocity stencil size
