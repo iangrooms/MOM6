@@ -53,7 +53,7 @@ use MOM_internal_tides,      only : propagate_int_tide, register_int_tide_restar
 use MOM_internal_tides,      only : internal_tides_init, internal_tides_end, int_tide_CS
 use MOM_kappa_shear,         only : kappa_shear_is_used
 use MOM_CVMix_KPP,           only : KPP_CS, KPP_init, KPP_compute_BLD, KPP_calculate
-use MOM_CVMix_KPP,           only : KPP_end, KPP_get_BLD, register_KPP_restarts
+use MOM_CVMix_KPP,           only : KPP_end, KPP_get_BLD, register_KPP_restarts, KPP_get_Lam2
 use MOM_CVMix_KPP,           only : KPP_NonLocalTransport_temp, KPP_NonLocalTransport_saln
 use MOM_oda_incupd,          only : apply_oda_incupd, oda_incupd_CS
 use MOM_opacity,             only : opacity_init, opacity_end, opacity_CS
@@ -591,6 +591,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
 
   real, dimension(SZI_(G),SZJ_(G)) :: &
     U_star, &    ! The friction velocity [Z T-1 ~> m s-1].
+    Lam2,   &    !  (Langmuir Number)^-2 [nondim]
     KPP_temp_flux, & ! KPP effective temperature flux [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
     KPP_salt_flux, & ! KPP effective salt flux [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
     SkinBuoyFlux, &  ! 2d surface buoyancy flux [Z2 T-3 ~> m2 s-3], used by ePBL
@@ -784,10 +785,14 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     endif
 
     call KPP_get_BLD(CS%KPP_CSp, BLD(:,:), G, US)
+    if (associated(visc%Lam2)) then
+      call KPP_get_Lam2(CS%KPP_CSp, Lam2(:,:), G, US)
+    endif
     ! If visc%MLD or visc%h_ML exist, copy KPP's BLD into them with appropriate conversions.
     if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
     if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
     if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = KPP_buoy_flux(:,:,1)
+    if (associated(visc%Lam2)) visc%Lam2(:,:) = Lam2(:,:)
 
     if (.not.CS%KPPisPassive) then
       !$OMP parallel do default(shared)
@@ -1321,6 +1326,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
 
   real, dimension(SZI_(G),SZJ_(G)) :: &
     U_star, &    ! The friction velocity [Z T-1 ~> m s-1].
+    Lam2,   &    !  (Langmuir Number)^-2 [nondim]
     KPP_temp_flux, & ! KPP effective temperature flux [C H T-1 ~> degC m s-1 or degC kg m-2 s-1]
     KPP_salt_flux, & ! KPP effective salt flux [S H T-1 ~> ppt m s-1 or ppt kg m-2 s-1]
     SkinBuoyFlux, &  ! 2d surface buoyancy flux [Z2 T-3 ~> m2 s-3], used by ePBL
@@ -1517,11 +1523,16 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
                        Kd_salt, visc%Kv_shear, KPP_NLTheat, KPP_NLTscalar, Waves=Waves)
     endif
 
+
     call KPP_get_BLD(CS%KPP_CSp, BLD(:,:), G, US)
+    if (associated(visc%Lam2)) then
+      call KPP_get_Lam2(CS%KPP_CSp, Lam2(:,:), G, US)
+    endif
     ! If visc%MLD or visc%h_ML exist, copy KPP's BLD into them with appropriate conversions.
     if (associated(visc%h_ML)) call convert_MLD_to_ML_thickness(BLD, h, visc%h_ML, tv, G, GV)
     if (associated(visc%MLD)) visc%MLD(:,:) = BLD(:,:)
     if (associated(visc%sfc_buoy_flx)) visc%sfc_buoy_flx(:,:) = KPP_buoy_flux(:,:,1) * US%L_to_Z**2
+    if (associated(visc%Lam2)) visc%Lam2(:,:) = Lam2(:,:)
 
     if (showCallTree) call callTree_waypoint("done with KPP_calculate (diabatic)")
     if (CS%debug) then

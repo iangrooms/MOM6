@@ -315,6 +315,10 @@ type, public :: MOM_control_struct ; private
   logical :: useMEKE                 !< If true, call the MEKE parameterization.
   logical :: use_stochastic_EOS      !< If true, use the stochastic EOS parameterizations.
   logical :: useWaves                !< If true, update Stokes drift
+  logical :: StokesMOST              !< If true, use Stokes Similarity package. Needed to decide if Lam2 should
+                                     !! be passed to mixedlayer_restrat.
+  logical :: wave_enhanced_ustar     !< If true, enhance ustar in Bodner23. Needed to decide if Lam2 should
+                                     !! be passed to mixedlayer_restrat.
   real :: dtbt_reset_period          !< The time interval between dynamic recalculation of the
                                      !! barotropic time step [T ~> s]. If this is negative dtbt is never
                                      !! calculated, and if it is 0, dtbt is calculated every step.
@@ -1427,8 +1431,17 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_tr_adv, &
                     CS%uhtr, CS%vhtr, G%HI, haloshift=0, unscale=GV%H_to_MKS*US%L_to_m**2)
     endif
     call cpu_clock_begin(id_clock_ml_restrat)
-    call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
-                            CS%visc%sfc_buoy_flx, CS%VarMix, G, GV, US, CS%mixedlayer_restrat_CSp)
+    if (CS%wave_enhanced_ustar .and. CS%StokesMOST) then
+      if (associated(CS%visc%Lam2)) then
+        call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
+                    CS%visc%sfc_buoy_flx, CS%VarMix, G, GV, US, CS%mixedlayer_restrat_CSp, CS%visc%Lam2)
+      else
+        call MOM_error(FATAL,'step_MOM_dynamics:CS%visc%Lam2 not associated')
+      endif
+    else
+      call mixedlayer_restrat(h, CS%uhtr, CS%vhtr, CS%tv, forces, dt, CS%visc%MLD, CS%visc%h_ML, &
+                  CS%visc%sfc_buoy_flx, CS%VarMix, G, GV, US, CS%mixedlayer_restrat_CSp)
+    endif
     call cpu_clock_end(id_clock_ml_restrat)
     call pass_var(h, G%Domain, clock=id_clock_pass, halo=max(2,CS%cont_stencil))
     if (CS%debug) then
@@ -2449,12 +2462,16 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   call get_param(param_file, '', "FPMIX", fpmix, &
                  "If true, add non-local momentum flux increments and diffuse down the Eulerian gradient.", &
                  default=.false., do_not_log=.true.)
-
   if (fpmix .and. .not. CS%split)  then
     call MOM_error(FATAL, "initialize_MOM: "//&
        "FPMIX=True only works when SPLIT=True.")
   endif
-
+  ! STOKES_MOST and  needed to
+  call get_param(param_file, '', 'STOKES_MOST', CS%StokesMOST, &
+                 'If True, use Stokes Similarity package.', &
+                 default=.False., do_not_log=.true.)
+  call get_param(param_file, '', "WAVE_ENHANCED_USTAR", CS%wave_enhanced_ustar, &
+             "If true, enhance ustar in Bodner23.", default=.false., do_not_log=.true.)
   call get_param(param_file, "MOM", "BOUSSINESQ", Boussinesq, &
                  "If true, make the Boussinesq approximation.", default=.true., do_not_log=.true.)
   call get_param(param_file, "MOM", "SEMI_BOUSSINESQ", semi_Boussinesq, &
