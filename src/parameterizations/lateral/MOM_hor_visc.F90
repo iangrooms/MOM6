@@ -1336,11 +1336,11 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
                 m_leithy(i,j) = CS%m_leithy_max(i,j)
               endif
             endif
-            if (CS%taper_leithy) then
-              ! Multiply m_leithy by taper function of depth
-              m_leithy(:,:) = m_leithy(:,:) * leithy_taper_function(CS, zc(:,:,k))
-            endif
           enddo ; enddo
+          if (CS%taper_leithy) then
+            ! Multiply m_leithy by taper function of depth
+            m_leithy(:,:) = m_leithy(:,:) * leithy_taper_function(CS, zc(:,:,k))
+          endif
 
           if (CS%smooth_Ah) then
             ! Smooth m_leithy.  A single call smoothes twice.
