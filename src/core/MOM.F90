@@ -273,6 +273,8 @@ type, public :: MOM_control_struct ; private
                     !! This is intended for running MOM6 in offline tracer mode
   logical :: MEKE_in_dynamics !< If .true. (default), MEKE is called in the dynamics routine otherwise
                               !! it is called during the tracer dynamics
+  logical :: compute_sfc_deconv = .false. !< If true, compute deconvolved surface fields.
+  real    :: sfc_deconv_factor  = 0.0     !< Factor to use in surface deconvolution. [nondim]
 
   type(time_type), pointer :: Time   !< pointer to the ocean clock
   real    :: dt                      !< (baroclinic) dynamics time step [T ~> s]
@@ -2730,6 +2732,15 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  "If true, initialize a client to a remote database that can "//&
                  "be used for online analysis and machine-learning inference.",&
                  default=.false.)
+  call get_param(param_file, "MOM", "COMPUTE_SFC_DECONV", CS%compute_sfc_deconv, &
+                 "If true, compute deconvolved surface fields: temperature, "//&
+                 "salinity, and lateral velocity components",&
+                 default=.false.)
+  if (CS%compute_sfc_deconv) then
+    call get_param(param_file, "MOM", "SFC_DECONV_FACTOR", CS%sfc_deconv_factor, &
+                   "Factor c to use in surface field deconvolution operator "//&
+                   "I - c * Laplacian.", default=0.1666667, units="nondim")
+  endif
 
   ! Check for inconsistent parameter settings.
   if (CS%use_ALE_algorithm .and. bulkmixedlayer) call MOM_error(FATAL, &
@@ -3958,14 +3969,15 @@ subroutine extract_surface_state(CS, sfc_state_in)
     ! integrals, since the 3-d sums are not negligible in cost.
     call allocate_surface_state(sfc_state_in, G_in, use_temperature, &
           do_integrals=.true., omit_frazil=.not.associated(CS%tv%frazil),&
-          use_iceshelves=use_iceshelves)
+          use_iceshelves=use_iceshelves, sfc_deconv=CS%compute_sfc_deconv)
   endif
 
   if (CS%rotate_index) then
     allocate(sfc_state)
     call allocate_surface_state(sfc_state, G, use_temperature, &
               do_integrals=.true., omit_frazil=.not.associated(CS%tv%frazil),&
-              use_iceshelves=use_iceshelves, sfc_state_in=sfc_state_in, turns=turns)
+              use_iceshelves=use_iceshelves, sfc_state_in=sfc_state_in, turns=turns, &
+              sfc_deconv=CS%compute_sfc_deconv)
   else
     sfc_state => sfc_state_in
   endif

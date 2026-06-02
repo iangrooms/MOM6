@@ -44,10 +44,14 @@ type, public :: surface
   real, allocatable, dimension(:,:) :: &
     SST, &         !< The sea surface temperature [C ~> degC].
     SSS, &         !< The sea surface salinity [S ~> psu or gSalt/kg].
+    SST_deconv, &  !< (1 - c dx^2 Delta)SST [C ~> deg C].
+    SSS_deconv, &  !< (1 - c dx^2 Delta)SSS [S ~> psu or gSalt/kg].
     sfc_density, & !< The mixed layer density [R ~> kg m-3].
     Hml, &         !< The mixed layer depth [Z ~> m].
     u, &           !< The mixed layer zonal velocity [L T-1 ~> m s-1].
     v, &           !< The mixed layer meridional velocity [L T-1 ~> m s-1].
+    u_deconv, &    !< u component of (I - c dx^2 Delta){u,v} [L T-1 ~> m s-1].
+    v_deconv, &    !< v component of (I - c dx^2 Delta){u,v} [L T-1 ~> m s-1].
     sea_lev, &     !< The sea level [Z ~> m].  If a reduced surface gravity is
                    !! used, that is compensated for in sea_lev.
     frazil, &      !< The energy needed to heat the ocean column to the freezing point during
@@ -64,6 +68,8 @@ type, public :: surface
                    !! conservative temperature in [C ~> degC].
   logical :: S_is_absS = .false. !< If true, the salinity variable SSS is actually the
                    !! absolute salinity in [S ~> gSalt kg-1].
+  logical :: use_sfc_deconv = .false. !< If true, use deconvolved surface fields. Can be used anywhere
+                   !! most likely used to compute surface fluxes
   type(coupler_2d_bc_type) :: tr_fields !< A structure that may contain an
                 !! array of named fields describing tracer-related quantities.
        !### NOTE: ALL OF THE ARRAYS IN TR_FIELDS USE THE COUPLER'S INDEXING CONVENTION AND HAVE NO
@@ -364,7 +370,8 @@ contains
 !! the ocean model. Unused fields are unallocated.
 subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
                                   gas_fields_ocn, use_meltpot, use_iceshelves, &
-                                  omit_frazil, sfc_state_in, turns, use_marbl_tracers)
+                                  omit_frazil, sfc_state_in, turns, use_marbl_tracers, &
+                                  sfc_deconv)
   type(ocean_grid_type), intent(in)    :: G                !< ocean grid structure
   type(surface),         intent(inout) :: sfc_state        !< ocean surface state type to be allocated.
   logical,     optional, intent(in)    :: use_temperature  !< If true, allocate the space for thermodynamic variables.
@@ -391,9 +398,12 @@ subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
   integer,     optional, intent(in)    :: turns  !< If present, the number of counterclockwise quarter
                                                  !! turns to use on the new grid.
   logical,     optional, intent(in)    :: use_marbl_tracers  !< If true, allocate the space for CO2 flux from MARBL
+  logical,     optional, intent(in)    :: sfc_deconv  !< If true, allocate space for deconvolved surface
+                                                      !! fields u, v, S, T.
 
   ! local variables
   logical :: use_temp, alloc_integ, use_melt_potential, alloc_iceshelves, alloc_frazil, alloc_fco2
+  logical :: alloc_sfc_deconv
   logical :: even_turns  ! True if turns is absent or even
   integer :: tr_field_i_mem(4), tr_field_j_mem(4)
   integer :: is, ie, js, je, isd, ied, jsd, jed
@@ -409,6 +419,7 @@ subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
   alloc_iceshelves = .false. ; if (present(use_iceshelves)) alloc_iceshelves = use_iceshelves
   alloc_frazil = .true. ; if (present(omit_frazil)) alloc_frazil = .not.omit_frazil
   alloc_fco2 = .false. ; if (present(use_marbl_tracers)) alloc_fco2 = use_marbl_tracers
+  alloc_sfc_deconv = .false. ; if (present(sfc_deconv)) alloc_sfc_deconv = sfc_deconv
 
   if (sfc_state%arrays_allocated) return
 
@@ -465,6 +476,13 @@ subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
     allocate(sfc_state%fco2(isd:ied,jsd:jed), source=0.0)
   endif
 
+  if (alloc_sfc_deconv) then
+    allocate(sfc_state%SST_deconv(isd:ied,jsd:jed), source=0.0)
+    allocate(sfc_state%SSS_deconv(isd:ied,jsd:jed), source=0.0)
+    allocate(sfc_state%u_deconv(IsdB:IedB,jsd:jed), source=0.0)
+    allocate(sfc_state%v_deconv(isd:ied,JsdB:JedB), source=0.0)
+  endif
+
   sfc_state%arrays_allocated = .true.
 
 end subroutine allocate_surface_state
@@ -487,6 +505,10 @@ subroutine deallocate_surface_state(sfc_state)
   if (allocated(sfc_state%ocean_heat)) deallocate(sfc_state%ocean_heat)
   if (allocated(sfc_state%ocean_salt)) deallocate(sfc_state%ocean_salt)
   if (allocated(sfc_state%fco2)) deallocate(sfc_state%fco2)
+  if (allocated(sfc_state%SST_deconv)) deallocate(sfc_state%SST_deconv)
+  if (allocated(sfc_state%SSS_deconv)) deallocate(sfc_state%SSS_deconv)
+  if (allocated(sfc_state%u_deconv)) deallocate(sfc_state%u_deconv)
+  if (allocated(sfc_state%v_deconv)) deallocate(sfc_state%v_deconv)
   call coupler_type_destructor(sfc_state%tr_fields)
 
   sfc_state%arrays_allocated = .false.
@@ -513,7 +535,8 @@ subroutine rotate_surface_state(sfc_state_in, sfc_state, G, turns)
   if (.not. sfc_state%arrays_allocated) then
     call allocate_surface_state(sfc_state, G, use_temperature=use_temperature, &
             do_integrals=do_integrals, use_meltpot=use_melt_potential, &
-            use_iceshelves=use_iceshelves, sfc_state_in=sfc_state_in, turns=turns)
+            use_iceshelves=use_iceshelves, sfc_state_in=sfc_state_in, turns=turns,
+            sfc_deconv=allocated(sfc_state_in%SST_deconv))
   endif
 
   if (use_temperature) then
