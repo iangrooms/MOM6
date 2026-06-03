@@ -1517,8 +1517,8 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
 
   if (IDs%id_speed_deconv > 0) then
     do j=js,je ; do i=is,ie
-      speed(i,j) = sqrt(0.5*((sfc_state%u_deconv(I-1,j)**2) + (sfc_state%u_deconv(I,j)**2)) + &
-                        0.5*((sfc_state%v_deconv(i,J-1)**2) + (sfc_state%v_deconv(i,J)**2)))
+      speed(i,j) = sqrt(0.5*((sfc_state%u_deconv(I-1,j)**2 + sfc_state%u_deconv(I,j)**2) + &
+                             (sfc_state%v_deconv(i,J-1)**2 + sfc_state%v_deconv(i,J)**2)))
     enddo ; enddo
     call post_data(IDs%id_speed_deconv, speed, diag, mask=G%mask2dT)
   endif
@@ -2226,7 +2226,7 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
       standard_name='area_averaged_sea_surface_height')
   IDs%id_ssu = register_diag_field('ocean_model', 'SSU', diag%axesCu1, Time, &
       'Sea Surface Zonal Velocity', 'm s-1', conversion=US%L_T_to_m_s)
-  IDs%id_ssu_Deconv = register_diag_field('ocean_model', 'SSU_DECONV', diag%axesCu1, Time, &
+  IDs%id_ssu_deconv = register_diag_field('ocean_model', 'SSU_DECONV', diag%axesCu1, Time, &
       'Sea Surface Zonal Velocity, Deconvolved', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_ssv = register_diag_field('ocean_model', 'SSV', diag%axesCv1, Time, &
       'Sea Surface Meridional Velocity', 'm s-1', conversion=US%L_T_to_m_s)

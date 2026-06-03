@@ -69,7 +69,7 @@ type, public :: surface
   logical :: S_is_absS = .false. !< If true, the salinity variable SSS is actually the
                    !! absolute salinity in [S ~> gSalt kg-1].
   logical :: use_sfc_deconv = .false. !< If true, use deconvolved surface fields. Can be used anywhere
-                   !! most likely used to compute surface fluxes
+                   !! currently used to compute surface fluxes
   type(coupler_2d_bc_type) :: tr_fields !< A structure that may contain an
                 !! array of named fields describing tracer-related quantities.
        !### NOTE: ALL OF THE ARRAYS IN TR_FIELDS USE THE COUPLER'S INDEXING CONVENTION AND HAVE NO

@@ -2739,7 +2739,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   if (CS%compute_sfc_deconv) then
     call get_param(param_file, "MOM", "SFC_DECONV_FACTOR", CS%sfc_deconv_factor, &
                    "Factor c to use in surface field deconvolution operator "//&
-                   "I - c * Laplacian.", default=0.1666667, units="nondim")
+                   "I - c * dx^2 * Laplacian.", default=0.1666667, units="nondim")
   endif
 
   ! Check for inconsistent parameter settings.
@@ -4156,17 +4156,17 @@ subroutine extract_surface_state(CS, sfc_state_in)
       sfc_state%SSS_deconv(i,j) = sfc_deconv_const * sfc_state%SSS(i,j) &
                           - CS%sfc_deconv_factor * ( (sfc_state%SSS(i-1,j) + sfc_state%SSS(i,j-1)) &
                                                    + (sfc_state%SSS(i+1,j) + sfc_state%SSS(i,j+1)) )
-      sfc_state%SST_deconv(i,j) = sfc_deconv_const * sfc_state%SST(i,j) &                
-                          - CS%sfc_deconv_factor * ( (sfc_state%SST(i-1,j) + sfc_state%SST(i,j-1)) & 
+      sfc_state%SST_deconv(i,j) = sfc_deconv_const * sfc_state%SST(i,j) &
+                          - CS%sfc_deconv_factor * ( (sfc_state%SST(i-1,j) + sfc_state%SST(i,j-1)) &
                                                    + (sfc_state%SST(i+1,j) + sfc_state%SST(i,j+1)) )
     enddo ; enddo
     do j=js,je ; do I=is-1,ie
-      sfc_state%u_deconv(I,j) = sfc_deconv_const * sfc_state%u(I,j) &        
-                              - CS%sfc_deconv_factor * ( (sfc_state%u(I-1,j) + sfc_state%u(I,j-1)) & 
+      sfc_state%u_deconv(I,j) = sfc_deconv_const * sfc_state%u(I,j) &
+                              - CS%sfc_deconv_factor * ( (sfc_state%u(I-1,j) + sfc_state%u(I,j-1)) &
                                                        + (sfc_state%u(I+1,j) + sfc_state%u(I,j+1)) )
     enddo ; enddo
     do J=js-1,je ; do i=is,ie
-      sfc_state%v_deconv(I,j) = sfc_deconv_const * sfc_state%v(I,j) &                               
+      sfc_state%v_deconv(I,j) = sfc_deconv_const * sfc_state%v(I,j) &
                               - CS%sfc_deconv_factor * ( (sfc_state%v(I-1,j) + sfc_state%v(I,j-1)) &
                                                        + (sfc_state%v(I+1,j) + sfc_state%v(I,j+1)) )
     enddo ; enddo

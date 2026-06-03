@@ -933,9 +933,9 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
                                  US%C_to_degC*sfc_state%SST(i+i0,j+j0)) + CELSIUS_KELVIN_OFFSET
       enddo ; enddo
     else
-      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
-        Ocean_sfc%t_surf(i,j) = gsw_pt_from_ct(US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0), &              
-                               US%C_to_degC*sfc_state%SST_deconv(i+i0,j+j0)) + CELSIUS_KELVIN_OFFSET     
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%t_surf(i,j) = gsw_pt_from_ct(US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0), &
+                               US%C_to_degC*sfc_state%SST_deconv(i+i0,j+j0)) + CELSIUS_KELVIN_OFFSET
       enddo ; enddo
     endif
   else
@@ -944,8 +944,8 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
         Ocean_sfc%t_surf(i,j) = US%C_to_degC*sfc_state%SST(i+i0,j+j0) + CELSIUS_KELVIN_OFFSET
       enddo ; enddo
     else
-      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
-        Ocean_sfc%t_surf(i,j) = US%C_to_degC*sfc_state%SST_deconv(i+i0,j+j0) + CELSIUS_KELVIN_OFFSET       
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%t_surf(i,j) = US%C_to_degC*sfc_state%SST_deconv(i+i0,j+j0) + CELSIUS_KELVIN_OFFSET
       enddo ; enddo
     endif
   endif
@@ -956,8 +956,8 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
         Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(US%S_to_ppt*sfc_state%SSS(i+i0,j+j0))
       enddo ; enddo
     else
-      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
-        Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0))                
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0))
       enddo ; enddo
     endif
   else
@@ -966,8 +966,8 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
         Ocean_sfc%s_surf(i,j) = US%S_to_ppt*sfc_state%SSS(i+i0,j+j0)
       enddo ; enddo
     else
-      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
-        Ocean_sfc%s_surf(i,j) = US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0)                                
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%s_surf(i,j) = US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0)
       enddo ; enddo
     endif
   endif
@@ -1017,11 +1017,11 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
                   0.5*(sfc_state%v(i+i0,J+j0)+sfc_state%v(i+i0,J-1+j0))
       enddo ; enddo
     else
-      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
-        Ocean_sfc%u_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &                            
-                  0.5*(sfc_state%u_deconv(I+i0,j+j0)+sfc_state%u_deconv(I-1+i0,j+j0))                             
-        Ocean_sfc%v_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &                            
-                  0.5*(sfc_state%v_deconv(i+i0,J+j0)+sfc_state%v_deconv(i+i0,J-1+j0))                             
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%u_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &
+                  0.5*(sfc_state%u_deconv(I+i0,j+j0)+sfc_state%u_deconv(I-1+i0,j+j0))
+        Ocean_sfc%v_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &
+                  0.5*(sfc_state%v_deconv(i+i0,J+j0)+sfc_state%v_deconv(i+i0,J-1+j0))
       enddo ; enddo
     endif
   elseif (Ocean_sfc%stagger == BGRID_NE) then
@@ -1033,12 +1033,12 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
                   0.5*(sfc_state%v(i+i0,J+j0)+sfc_state%v(i+i0+1,J+j0))
       enddo ; enddo
     else
-    if (.not. sfc_state%use_sfc_deconv) then                                                        
-      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
-        Ocean_sfc%u_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &                           
-                  0.5*(sfc_state%u_deconv(I+i0,j+j0)+sfc_state%u_deconv(I+i0,j+j0+1))                             
-        Ocean_sfc%v_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &                           
-                  0.5*(sfc_state%v_deconv(i+i0,J+j0)+sfc_state%v_deconv(i+i0+1,J+j0))                             
+    if (.not. sfc_state%use_sfc_deconv) then
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%u_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &
+                  0.5*(sfc_state%u_deconv(I+i0,j+j0)+sfc_state%u_deconv(I+i0,j+j0+1))
+        Ocean_sfc%v_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &
+                  0.5*(sfc_state%v_deconv(i+i0,J+j0)+sfc_state%v_deconv(i+i0+1,J+j0))
       enddo ; enddo
     endif
   elseif (Ocean_sfc%stagger == CGRID_NE) then
@@ -1048,9 +1048,9 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
         Ocean_sfc%v_surf(i,j) = G%mask2dCv(i+i0,J+j0) * US%L_T_to_m_s * sfc_state%v(i+i0,J+j0)
       enddo ; enddo
     else
-      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
-        Ocean_sfc%u_surf(i,j) = G%mask2dCu(I+i0,j+j0) * US%L_T_to_m_s *sfc_state%u_deconv(I+i0,j+j0)      
-        Ocean_sfc%v_surf(i,j) = G%mask2dCv(i+i0,J+j0) * US%L_T_to_m_s *sfc_state%v_deconv(i+i0,J+j0)      
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%u_surf(i,j) = G%mask2dCu(I+i0,j+j0) * US%L_T_to_m_s *sfc_state%u_deconv(I+i0,j+j0)
+        Ocean_sfc%v_surf(i,j) = G%mask2dCv(i+i0,J+j0) * US%L_T_to_m_s *sfc_state%v_deconv(i+i0,J+j0)
       enddo ; enddo
     endif
   else
