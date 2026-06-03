@@ -177,6 +177,14 @@ type, public :: ocean_grid_type
     df_dx, &      !< Derivative d/dx f (Coriolis parameter) at h-points [T-1 L-1 ~> s-1 m-1].
     df_dy         !< Derivative d/dy f (Coriolis parameter) at h-points [T-1 L-1 ~> s-1 m-1].
 
+  ! These variables are used in the surface flux deconvolution code
+  real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: &
+    near_land_T   !< 0 when there is land at T cell or any of its neighbors
+  real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEMB_PTR_) :: &
+    near_land_u   !< 0 when there is land at u point or any of its neighbors
+  real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_) :: &
+    near_land_v   !< 0 when there is land v point or any of its neighbors
+
   ! These variables are global sums that are useful for 1-d diagnostics.
   real :: areaT_global  !< Global sum of h-cell area [L2 ~> m2]
   real :: IareaT_global !< Global sum of inverse h-cell area (1/areaT_global) [L-2 ~> m-2].
@@ -640,6 +648,10 @@ subroutine MOM_grid_end(G)
 
   deallocate(G%gridLonT) ; deallocate(G%gridLatT)
   deallocate(G%gridLonB) ; deallocate(G%gridLatB)
+
+  if (allocated(G%near_land_T)) deallocate(G%near_land_T)
+  if (allocated(G%near_land_u)) deallocate(G%near_land_u)
+  if (allocated(G%near_land_v)) deallocate(G%near_land_v)
 
   ! The cursory flag avoids doing any deallocation of memory in the underlying
   ! infrastructure to avoid problems due to shared pointers.

@@ -1183,7 +1183,8 @@ end function Adcroft_reciprocal
 !! appropriate treatment of the boundary conditions.  mask2dCu and mask2dCv
 !! are 0.0 at any points adjacent to a land point.  mask2dBu is 0.0 at
 !! any land or boundary point.  For points in the interior, mask2dCu,
-!! mask2dCv, and mask2dBu are all 1.0.
+!! mask2dCv, and mask2dBu are all 1.0. near_land_{T,u,v} are 0 if any adjacent
+!! cell is land.
 subroutine initialize_masks(G, PF, US)
   type(dyn_horgrid_type), intent(inout) :: G  !< The dynamic horizontal grid type
   type(param_file_type),  intent(in)    :: PF !< Parameter file structure
@@ -1192,6 +1193,8 @@ subroutine initialize_masks(G, PF, US)
   real :: Dmask      ! The depth for masking in the same units as G%bathyT [Z ~> m].
   real :: min_depth  ! The minimum ocean depth in the same units as G%bathyT [Z ~> m].
   real :: mask_depth ! The depth shallower than which to mask a point as land [Z ~> m].
+  logical :: near_land_arrays ! True if we have to allocate and compute near_land_{T,u,v}
+  real :: local_mask_prod ! tmp used to compute near land arrays [nondim]
   character(len=40)  :: mdl = "MOM_grid_init initialize_masks"
   integer :: i, j
 
@@ -1208,6 +1211,10 @@ subroutine initialize_masks(G, PF, US)
                  "fluxes are zeroed out. MASKING_DEPTH is ignored if it has the special "//&
                  "default value.", &
                  units="m", default=-9999.0, scale=US%m_to_Z)
+  call get_param(param_file, "MOM", "COMPUTE_SFC_DECONV", near_land_arrays, &
+                 "If true, compute deconvolved surface fields: temperature, "//&
+                 "salinity, and lateral velocity components",&
+                 default=.false., do_not_log=.true.)
 
   Dmask = mask_depth
   if (mask_depth == -9999.0*US%m_to_Z) Dmask = min_depth
@@ -1268,6 +1275,29 @@ subroutine initialize_masks(G, PF, US)
     G%areaCv(i,J) = G%dyCv(i,J) * G%dx_Cv(i,J)
     G%IareaCv(i,J) = G%mask2dCv(i,J) * Adcroft_reciprocal(G%areaCv(i,J))
   enddo ; enddo
+
+  if (near_land_arrays) then
+    ! Compute near_land_{T,u,v} for surface deconvolution code
+    allocate(G%near_land_T(G%isd,G%ied,G%jsd,G%jed), source=1.0)
+    allocate(G%near_land_u(G%IsdB,G%IedB,G%jsd,G%jed), source=1.0)
+    allocate(G%near_land_v(G%isd,G%ied,G%JsdB,G%JedB), source=1.0)
+    ! Use of PRODUCT intrinsic here is OK because order does not change answer
+    ! We only need to know if the product is 0 or not
+    do j=G%jsd+1,G%jed-1 ; do i=G%isd+1,G%ied-1
+      local_mask_prod = PRODUCT(G%mask2dT(i-1:i+1,j-1:j+1))
+      if (local_mask_prod <= 0.0) G%near_land_T(i,j) = 0.0
+    enddo ; enddo
+    call pass_var(G%near_land_T, G%domain)
+    do j=G%jsd+1,G%jed-1 ; do I=G%isdB+1,G%IedB-1
+      local_mask_prod = PRODUCT(G%mask2dCu(I-1:I+1,j-1:j+1))
+      if (local_mask_prod <= 0.0) G%near_land_u(I,j) = 0.0
+    enddo ; enddo
+    do J=G%JsdB+1,G%JedB-1 ; do i=G%isd+1,G%ied-1
+      local_mask_prod = PRODUCT(G%mask2dCv(i-1:i+1,J-1:J+1))
+      if (local_mask_prod <= 0.0) G%near_land_v(i,J) = 0.0
+    enddo ; enddo
+    call pass_vector(G%near_land_u, G%near_land_v, G%Domain, To_All+Scalar_Pair)
+  endif
 
   call callTree_leave("initialize_masks()")
 end subroutine initialize_masks
