@@ -1286,9 +1286,9 @@ subroutine initialize_near_land_masks(G)
   call callTree_enter("initialize_near_land_masks(), MOM_grid_initialize.F90")
 
   ! Compute near_land_{T,u,v} for surface deconvolution code
-  allocate(G%near_land_T(G%isd,G%ied,G%jsd,G%jed), source=1.0)
-  allocate(G%near_land_u(G%IsdB,G%IedB,G%jsd,G%jed), source=1.0)
-  allocate(G%near_land_v(G%isd,G%ied,G%JsdB,G%JedB), source=1.0)
+  allocate(G%near_land_T(G%isd:G%ied,G%jsd:G%jed), source=1.0)
+  allocate(G%near_land_u(G%IsdB:G%IedB,G%jsd:G%jed), source=1.0)
+  allocate(G%near_land_v(G%isd:G%ied,G%JsdB:G%JedB), source=1.0)
   ! Use of PRODUCT intrinsic here is OK because order does not change code output
   ! We only need to know if the product is 0 or not
   do j=G%jsd+1,G%jed-1 ; do i=G%isd+1,G%ied-1
