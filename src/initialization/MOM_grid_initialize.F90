@@ -12,6 +12,7 @@ use MOM_dyn_horgrid,   only : dyn_horgrid_type, set_derived_dyn_horgrid
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, is_root_pe
 use MOM_error_handler, only : callTree_enter, callTree_leave
 use MOM_file_parser,   only : get_param, log_param, log_version, param_file_type
+use MOM_grid,          only : ocean_grid_type
 use MOM_io,            only : MOM_read_data, slasher, file_exists, stdout
 use MOM_io,            only : CORNER, NORTH_FACE, EAST_FACE
 use MOM_unit_scaling,  only : unit_scale_type
@@ -1277,7 +1278,7 @@ end subroutine initialize_masks
 !!    Initialize_near_land_masks sets near_land_{T,u,v} to 0 if any adjacent
 !! cell is land. This is used in the surface field deconvolution code.
 subroutine initialize_near_land_masks(G)
-  type(ocn_grid_type),    intent(inout) :: G  !< The ocean's grid structure
+  type(ocean_grid_type),    intent(inout) :: G  !< The ocean's grid structure
   ! Local variables
   real :: local_mask_prod ! tmp used to compute near land arrays [nondim]
   integer :: i, j
