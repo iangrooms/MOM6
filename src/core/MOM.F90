@@ -96,6 +96,7 @@ use MOM_forcing_type,          only : copy_common_forcing_fields, set_derived_fo
 use MOM_forcing_type,          only : homogenize_forcing, homogenize_mech_forcing
 use MOM_grid,                  only : ocean_grid_type, MOM_grid_init, MOM_grid_end
 use MOM_grid,                  only : set_first_direction
+use MOM_grid_initialize,       only : initialize_near_land_masks
 use MOM_harmonic_analysis,     only : HA_accum_FtF, HA_accum_FtSSH, harmonic_analysis_CS
 use MOM_hor_index,             only : hor_index_type, hor_index_init
 use MOM_hor_index,             only : rotate_hor_index
@@ -2861,6 +2862,11 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   ! Copy the grid metrics and bathymetry to the ocean_grid_type
   call copy_dyngrid_to_MOM_grid(dG_in, G_in, US)
 
+  ! If necessary, compute 'near-land' masks for surface deconvolution code
+  if (CS%compute_sfc_deconv) then
+    call initialize_near_land_masks(G_in)
+  endif
+
   call callTree_waypoint("returned from MOM_initialize_fixed() (initialize_MOM)")
 
   call verticalGridInit( param_file, CS%GV, US )
@@ -2891,6 +2897,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
     call clone_MOM_domain(G%Domain, dG%Domain)
     call rotate_dyn_horgrid(dG_in, dG, US, turns)
     call copy_dyngrid_to_MOM_grid(dG, G, US)
+    if (CS%compute_sfc_deconv) then
+      call initialize_near_land_masks(G)
+    endif
 
     if (associated(OBC_in)) then
       ! TODO: General OBC index rotations is not yet supported.
@@ -3303,6 +3312,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
 
     call copy_MOM_grid_to_dyngrid(G, test_dG, US)
     call copy_dyngrid_to_MOM_grid(test_dG, CS%G, US)
+    if (CS%compute_sfc_deconv) then
+      call initialize_near_land_masks(CS%G)
+    endif
 
     call destroy_dyn_horgrid(test_dG)
     call MOM_grid_end(G) ; deallocate(G)
