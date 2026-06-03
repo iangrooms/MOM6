@@ -535,7 +535,7 @@ subroutine rotate_surface_state(sfc_state_in, sfc_state, G, turns)
   if (.not. sfc_state%arrays_allocated) then
     call allocate_surface_state(sfc_state, G, use_temperature=use_temperature, &
             do_integrals=do_integrals, use_meltpot=use_melt_potential, &
-            use_iceshelves=use_iceshelves, sfc_state_in=sfc_state_in, turns=turns,
+            use_iceshelves=use_iceshelves, sfc_state_in=sfc_state_in, turns=turns, &
             sfc_deconv=allocated(sfc_state_in%SST_deconv))
   endif
 
