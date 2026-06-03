@@ -3938,6 +3938,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
   real :: T_freeze(SZI_(CS%G)) !< freezing temperature [C ~> degC]
   real :: pres(SZI_(CS%G))   !< Pressure to use for the freezing temperature calculation [R L2 T-2 ~> Pa]
   real :: delT(SZI_(CS%G))   !< Depth integral of T-T_freeze [H C ~> m degC or degC kg m-2]
+  real :: sfc_deconv_const   !< 1 + 4 * sfc_deconv_factor, used for deconvolution [nondim]
   logical :: use_temperature !< If true, temperature and salinity are used as state variables.
   integer :: i, j, k, is, ie, js, je, nz, numberOfErrors, ig, jg
   integer :: isd, ied, jsd, jed
@@ -4145,6 +4146,31 @@ subroutine extract_surface_state(CS, sfc_state_in)
     endif
   endif  ! (CS%Hmix >= 0.0)
 
+  if (allocated(sfc_state%SSS_deconv)) then
+    sfc_deconv_const = 1.0 + 4.0 * CS%sfc_deconv_factor
+    ! Updating the halos just in case, because Laplacian will access halo values
+    call pass_var(sfc_state%SSS, G%domain)
+    call pass_var(sfc_state%SST, G%domain)
+    call pass_vector(sfc_state%u, sfc_state%v, G%domain)
+    do j=js,je ; do i=is,ie
+      sfc_state%SSS_deconv(i,j) = sfc_deconv_const * sfc_state%SSS(i,j) &
+                          - CS%sfc_deconv_factor * ( (sfc_state%SSS(i-1,j) + sfc_state%SSS(i,j-1)) &
+                                                   + (sfc_state%SSS(i+1,j) + sfc_state%SSS(i,j+1)) )
+      sfc_state%SST_deconv(i,j) = sfc_deconv_const * sfc_state%SST(i,j) &                
+                          - CS%sfc_deconv_factor * ( (sfc_state%SST(i-1,j) + sfc_state%SST(i,j-1)) & 
+                                                   + (sfc_state%SST(i+1,j) + sfc_state%SST(i,j+1)) )
+    enddo ; enddo
+    do j=js,je ; do I=is-1,ie
+      sfc_state%u_deconv(I,j) = sfc_deconv_const * sfc_state%u(I,j) &        
+                              - CS%sfc_deconv_factor * ( (sfc_state%u(I-1,j) + sfc_state%u(I,j-1)) & 
+                                                       + (sfc_state%u(I+1,j) + sfc_state%u(I,j+1)) )
+    enddo ; enddo
+    do J=js-1,je ; do i=is,ie
+      sfc_state%v_deconv(I,j) = sfc_deconv_const * sfc_state%v(I,j) &                               
+                              - CS%sfc_deconv_factor * ( (sfc_state%v(I-1,j) + sfc_state%v(I,j-1)) &
+                                                       + (sfc_state%v(I+1,j) + sfc_state%v(I,j+1)) )
+    enddo ; enddo
+  endif
 
   if (allocated(sfc_state%melt_potential)) then
     !$OMP parallel do default(shared) private(depth_ml, dh, T_freeze, depth, pres, delT)

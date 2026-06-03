@@ -391,6 +391,10 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
                               sfc_deconv=OS%compute_sfc_deconv)
   call get_param(param_file, mdl, "USE_SFC_DECONV", OS%sfc_state%use_sfc_deconv, &
        "If true, uses deconvolved surface fields to compute air-sea fluxes.", default=.false.)
+  if (OS%sfc_state%use_sfc_deconv .and. .not.OS%compute_sfc_deconv) then
+    call MOM_error(FATAL, "ocean_model_init:"//&
+                          "USE_SFC_DECONV=True requires COMPUTE_SFC_DECONV=True.")
+  endif
 
   call surface_forcing_init(Time_in, OS%grid, OS%US, param_file, OS%diag, &
                             OS%forcing_CSp, OS%restore_salinity, OS%restore_temp, OS%use_waves)
@@ -923,24 +927,49 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
   i0 = is - isc_bnd ; j0 = js - jsc_bnd
   if (sfc_state%T_is_conT) then
     ! Convert the surface T from conservative T to potential T.
-    do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%t_surf(i,j) = gsw_pt_from_ct(US%S_to_ppt*sfc_state%SSS(i+i0,j+j0), &
-                               US%C_to_degC*sfc_state%SST(i+i0,j+j0)) + CELSIUS_KELVIN_OFFSET
-    enddo ; enddo
+    if (.not. sfc_state%use_sfc_deconv) then
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%t_surf(i,j) = gsw_pt_from_ct(US%S_to_ppt*sfc_state%SSS(i+i0,j+j0), &
+                                 US%C_to_degC*sfc_state%SST(i+i0,j+j0)) + CELSIUS_KELVIN_OFFSET
+      enddo ; enddo
+    else
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
+        Ocean_sfc%t_surf(i,j) = gsw_pt_from_ct(US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0), &              
+                               US%C_to_degC*sfc_state%SST_deconv(i+i0,j+j0)) + CELSIUS_KELVIN_OFFSET     
+      enddo ; enddo
+    endif
   else
-    do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%t_surf(i,j) = US%C_to_degC*sfc_state%SST(i+i0,j+j0) + CELSIUS_KELVIN_OFFSET
-    enddo ; enddo
+    if (.not. sfc_state%use_sfc_deconv) then
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%t_surf(i,j) = US%C_to_degC*sfc_state%SST(i+i0,j+j0) + CELSIUS_KELVIN_OFFSET
+      enddo ; enddo
+    else
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
+        Ocean_sfc%t_surf(i,j) = US%C_to_degC*sfc_state%SST_deconv(i+i0,j+j0) + CELSIUS_KELVIN_OFFSET       
+      enddo ; enddo
+    endif
   endif
   if (sfc_state%S_is_absS) then
     ! Convert the surface S from absolute salinity to practical salinity.
-    do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(US%S_to_ppt*sfc_state%SSS(i+i0,j+j0))
-    enddo ; enddo
+    if (.not. sfc_state%use_sfc_deconv) then`
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(US%S_to_ppt*sfc_state%SSS(i+i0,j+j0))
+      enddo ; enddo
+    else
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
+        Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0))                
+      enddo ; enddo
+    endif
   else
-    do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%s_surf(i,j) = US%S_to_ppt*sfc_state%SSS(i+i0,j+j0)
-    enddo ; enddo
+    if (.not. sfc_state%use_sfc_deconv) then
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%s_surf(i,j) = US%S_to_ppt*sfc_state%SSS(i+i0,j+j0)
+      enddo ; enddo
+    else
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
+        Ocean_sfc%s_surf(i,j) = US%S_to_ppt*sfc_state%SSS_deconv(i+i0,j+j0)                                
+      enddo ; enddo
+    endif
   endif
 
   if (present(patm)) then
@@ -980,24 +1009,50 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
   endif
 
   if (Ocean_sfc%stagger == AGRID) then
-    do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%u_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &
-                0.5*(sfc_state%u(I+i0,j+j0)+sfc_state%u(I-1+i0,j+j0))
-      Ocean_sfc%v_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &
-                0.5*(sfc_state%v(i+i0,J+j0)+sfc_state%v(i+i0,J-1+j0))
-    enddo ; enddo
+    if (.not. sfc_state%use_sfc_deconv) then
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%u_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &
+                  0.5*(sfc_state%u(I+i0,j+j0)+sfc_state%u(I-1+i0,j+j0))
+        Ocean_sfc%v_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &
+                  0.5*(sfc_state%v(i+i0,J+j0)+sfc_state%v(i+i0,J-1+j0))
+      enddo ; enddo
+    else
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
+        Ocean_sfc%u_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &                            
+                  0.5*(sfc_state%u_deconv(I+i0,j+j0)+sfc_state%u_deconv(I-1+i0,j+j0))                             
+        Ocean_sfc%v_surf(i,j) = G%mask2dT(i+i0,j+j0) * US%L_T_to_m_s * &                            
+                  0.5*(sfc_state%v_deconv(i+i0,J+j0)+sfc_state%v_deconv(i+i0,J-1+j0))                             
+      enddo ; enddo
+    endif
   elseif (Ocean_sfc%stagger == BGRID_NE) then
-    do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%u_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &
-                0.5*(sfc_state%u(I+i0,j+j0)+sfc_state%u(I+i0,j+j0+1))
-      Ocean_sfc%v_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &
-                0.5*(sfc_state%v(i+i0,J+j0)+sfc_state%v(i+i0+1,J+j0))
-    enddo ; enddo
+    if (.not. sfc_state%use_sfc_deconv) then
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%u_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &
+                  0.5*(sfc_state%u(I+i0,j+j0)+sfc_state%u(I+i0,j+j0+1))
+        Ocean_sfc%v_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &
+                  0.5*(sfc_state%v(i+i0,J+j0)+sfc_state%v(i+i0+1,J+j0))
+      enddo ; enddo
+    else
+    if (.not. sfc_state%use_sfc_deconv) then                                                        
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
+        Ocean_sfc%u_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &                           
+                  0.5*(sfc_state%u_deconv(I+i0,j+j0)+sfc_state%u_deconv(I+i0,j+j0+1))                             
+        Ocean_sfc%v_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &                           
+                  0.5*(sfc_state%v_deconv(i+i0,J+j0)+sfc_state%v_deconv(i+i0+1,J+j0))                             
+      enddo ; enddo
+    endif
   elseif (Ocean_sfc%stagger == CGRID_NE) then
-    do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
-      Ocean_sfc%u_surf(i,j) = G%mask2dCu(I+i0,j+j0) * US%L_T_to_m_s * sfc_state%u(I+i0,j+j0)
-      Ocean_sfc%v_surf(i,j) = G%mask2dCv(i+i0,J+j0) * US%L_T_to_m_s * sfc_state%v(i+i0,J+j0)
-    enddo ; enddo
+    if (.not. sfc_state%use_sfc_deconv) then
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
+        Ocean_sfc%u_surf(i,j) = G%mask2dCu(I+i0,j+j0) * US%L_T_to_m_s * sfc_state%u(I+i0,j+j0)
+        Ocean_sfc%v_surf(i,j) = G%mask2dCv(i+i0,J+j0) * US%L_T_to_m_s * sfc_state%v(i+i0,J+j0)
+      enddo ; enddo
+    else
+      do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd                                                   
+        Ocean_sfc%u_surf(i,j) = G%mask2dCu(I+i0,j+j0) * US%L_T_to_m_s *sfc_state%u_deconv(I+i0,j+j0)      
+        Ocean_sfc%v_surf(i,j) = G%mask2dCv(i+i0,J+j0) * US%L_T_to_m_s *sfc_state%v_deconv(i+i0,J+j0)      
+      enddo ; enddo
+    endif
   else
     write(val_str, '(I8)') Ocean_sfc%stagger
     call MOM_error(FATAL, "convert_state_to_ocean_type: "//&

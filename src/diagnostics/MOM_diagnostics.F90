@@ -138,12 +138,15 @@ type, public :: surface_diag_IDs ; private
   !>@{ Diagnostic IDs for 2-d surface and bottom flux and state fields
   !Diagnostic IDs for 2-d surface and bottom fields
   integer :: id_zos  = -1, id_zossq  = -1
-  integer :: id_volo = -1, id_speed  = -1
+  integer :: id_volo = -1, id_speed  = -1, id_speed_deconv = -1
   integer :: id_ssh  = -1, id_ssh_ga = -1
-  integer :: id_sst  = -1, id_sst_sq = -1, id_sstcon = -1
-  integer :: id_sss  = -1, id_sss_sq = -1, id_sssabs = -1
-  integer :: id_ssu  = -1, id_ssv    = -1
-  integer :: id_ssu_east = -1, id_ssv_north = -1
+  integer :: id_sst  = -1,       id_sst_sq = -1,        id_sstcon = -1
+  integer :: id_sst_deconv = -1, id_sst_deconv_sq = -1, id_sstcon_deconv = -1
+  integer :: id_sss  = -1,       id_sss_sq = -1,        id_sssabs = -1
+  integer :: id_sss_deconv = -1, id_sss_deconv_sq = -1, id_sssabs_deconv = -1
+  integer :: id_ssu  = -1,       id_ssv    = -1
+  integer :: id_ssu_deconv = -1, id_ssv_deconv = -1
+  integer :: id_ssu_east = -1,   id_ssv_north = -1
 
   ! Diagnostic IDs for  heat and salt flux fields
   integer :: id_fraz         = -1
@@ -1495,8 +1498,14 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
   if (IDs%id_ssu > 0) &
     call post_data(IDs%id_ssu, sfc_state%u, diag, mask=G%mask2dCu)
 
+  if (IDs%id_ssu_deconv > 0) &
+    call post_data(IDs%id_ssu_deconv, sfc_state%u_deconv, diag, mask=G%mask2dCu)
+
   if (IDs%id_ssv > 0) &
     call post_data(IDs%id_ssv, sfc_state%v, diag, mask=G%mask2dCv)
+
+  if (IDs%id_ssv_deconv > 0) &
+    call post_data(IDs%id_ssv_deconv, sfc_state%v_deconv, diag, mask=G%mask2dCv)
 
   if (IDs%id_speed > 0) then
     do j=js,je ; do i=is,ie
@@ -1504,6 +1513,14 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
                         0.5*((sfc_state%v(i,J-1)**2) + (sfc_state%v(i,J)**2)))
     enddo ; enddo
     call post_data(IDs%id_speed, speed, diag, mask=G%mask2dT)
+  endif
+
+  if (IDs%id_speed_deconv > 0) then
+    do j=js,je ; do i=is,ie
+      speed(i,j) = sqrt(0.5*((sfc_state%u_deconv(I-1,j)**2) + (sfc_state%u_deconv(I,j)**2)) + &
+                        0.5*((sfc_state%v_deconv(i,J-1)**2) + (sfc_state%v_deconv(i,J)**2)))
+    enddo ; enddo
+    call post_data(IDs%id_speed_deconv, speed, diag, mask=G%mask2dT)
   endif
 
   if (IDs%id_ssu_east > 0 .or. IDs%id_ssv_north > 0) then
@@ -1618,31 +1635,53 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
   if (tv%T_is_conT) then
     ! Internal T&S variables are conservative temperature & absolute salinity
     if (IDs%id_sstcon > 0) call post_data(IDs%id_sstcon, sfc_state%SST, diag, mask=G%mask2dT)
+    if (IDs%is_sstcon_deconv > 0) &
+      call post_data(IDs%id_sstcon_deconv, sfc_state%SST_deconv, diag, mask=G%mask2dT)
     ! Use TEOS-10 function calls convert T&S diagnostics from conservative temp
     ! to potential temperature.
     EOSdom(:) = EOS_domain(G%HI)
-    do j=js,je
-      call cons_temp_to_pot_temp(sfc_state%SST(:,j), sfc_state%SSS(:,j), work_2d(:,j), tv%eqn_of_state, EOSdom)
-    enddo
-    if (IDs%id_sst > 0) call post_data(IDs%id_sst, work_2d, diag, mask=G%mask2dT)
+    if (IDs%id_sst > 0) then
+      do j=js,je
+        call cons_temp_to_pot_temp(sfc_state%SST(:,j), sfc_state%SSS(:,j), work_2d(:,j), tv%eqn_of_state, EOSdom)
+      enddo
+      call post_data(IDs%id_sst, work_2d, diag, mask=G%mask2dT)
+    endif
+    if (IDs%id_sst_deconv > 0) then
+      do j=js,je
+        call cons_temp_to_pot_temp(sfc_state%SST_deconv(:,j), sfc_state%SSS_deconv(:,j), &
+                                   work_2d(:,j), tv%eqn_of_state, EOSdom)
+      enddo
+      call post_data(IDs%id_sst_deconv, work_2d, diag, mask=G%mask2dT)
+    endif
   else
     ! Internal T&S variables are potential temperature & practical salinity
     if (IDs%id_sst > 0) call post_data(IDs%id_sst, sfc_state%SST, diag, mask=G%mask2dT)
+    if (IDs%id_sst_deconv > 0) call post_data(IDs%id_sst_deconv, sfc_state%SST_deconv, diag, mask=G%mask2dT)
   endif
 
   if (tv%S_is_absS) then
     ! Internal T&S variables are conservative temperature & absolute salinity
     if (IDs%id_sssabs > 0) call post_data(IDs%id_sssabs, sfc_state%SSS, diag, mask=G%mask2dT)
+    if (IDs%id_sssabs_deconv > 0) call post_data(IDs%id_sssabs_deconv, sfc_state%SSS_deconv, diag, mask=G%mask2dT)
     ! Use TEOS-10 function calls convert T&S diagnostics from absolute salinity
     ! to practical salinity.
     EOSdom(:) = EOS_domain(G%HI)
-    do j=js,je
-      call abs_saln_to_prac_saln(sfc_state%SSS(:,j), work_2d(:,j), tv%eqn_of_state, EOSdom)
-    enddo
-    if (IDs%id_sss > 0) call post_data(IDs%id_sss, work_2d, diag, mask=G%mask2dT)
+    if (IDs%id_sss > 0) then
+      do j=js,je
+        call abs_saln_to_prac_saln(sfc_state%SSS(:,j), work_2d(:,j), tv%eqn_of_state, EOSdom)
+      enddo
+      call post_data(IDs%id_sss, work_2d, diag, mask=G%mask2dT)
+    endif
+    if (IDs%id_sss_deconv > 0) then
+      do j=js,je
+        call abs_saln_to_prac_saln(sfc_state%SSS_deconv(:,j), work_2d(:,j), tv%eqn_of_state, EOSdom)
+      enddo
+      call post_data(IDs%id_sss_deconv, work_2d, diag, mask=G%mask2dT)
+    endif
   else
     ! Internal T&S variables are potential temperature & practical salinity
     if (IDs%id_sss > 0) call post_data(IDs%id_sss, sfc_state%SSS, diag, mask=G%mask2dT)
+    if (IDs%id_sss_deconv > 0) call post_data(IDs%id_sss_deconv, sfc_state%SSS_deconv, diag, mask=G%mask2dT)
   endif
 
   if (IDs%id_sst_sq > 0) then
@@ -1651,11 +1690,23 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     enddo ; enddo
     call post_data(IDs%id_sst_sq, work_2d, diag, mask=G%mask2dT)
   endif
+  if (IDs%id_sst_deconv_sq > 0) then
+    do j=js,je ; do i=is,ie
+      work_2d(i,j) = sfc_state%SST_deconv(i,j)*sfc_state%SST_deconv(i,j)
+    enddo ; enddo
+    call post_data(IDs%id_sst_deconv_sq, work_2d, diag, mask=G%mask2dT)
+  endif
   if (IDs%id_sss_sq > 0) then
     do j=js,je ; do i=is,ie
       work_2d(i,j) = sfc_state%SSS(i,j)*sfc_state%SSS(i,j)
     enddo ; enddo
     call post_data(IDs%id_sss_sq, work_2d, diag, mask=G%mask2dT)
+  endif
+  if (IDs%id_sss_deconv_sq > 0) then
+    do j=js,je ; do i=is,ie
+      work_2d(i,j) = sfc_state%SSS_deconv(i,j)*sfc_state%SSS_deconv(i,j)
+    enddo ; enddo
+    call post_data(IDs%id_sss_deconv_sq, work_2d, diag, mask=G%mask2dT)
   endif
 
   call coupler_type_send_data(sfc_state%tr_fields, get_diag_time_end(diag))
@@ -2175,10 +2226,16 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
       standard_name='area_averaged_sea_surface_height')
   IDs%id_ssu = register_diag_field('ocean_model', 'SSU', diag%axesCu1, Time, &
       'Sea Surface Zonal Velocity', 'm s-1', conversion=US%L_T_to_m_s)
+  IDs%id_ssu_Deconv = register_diag_field('ocean_model', 'SSU_DECONV', diag%axesCu1, Time, &
+      'Sea Surface Zonal Velocity, Deconvolved', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_ssv = register_diag_field('ocean_model', 'SSV', diag%axesCv1, Time, &
       'Sea Surface Meridional Velocity', 'm s-1', conversion=US%L_T_to_m_s)
+  IDs%id_ssv_deconv = register_diag_field('ocean_model', 'SSV_DECONV', diag%axesCv1, Time, &
+      'Sea Surface Meridional Velocity, Deconvolved', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_speed = register_diag_field('ocean_model', 'speed', diag%axesT1, Time, &
       'Sea Surface Speed', 'm s-1', conversion=US%L_T_to_m_s)
+  IDs%id_speed_deconv = register_diag_field('ocean_model', 'speed_deconv', diag%axesT1, Time, &
+      'Sea Surface Speed of Deconvolved Velocity', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_ssu_east = register_diag_field('ocean_model', 'ssu_east', diag%axesT1, Time, &
       'Eastward velocity', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_ssv_north = register_diag_field('ocean_model', 'ssv_north', diag%axesT1, Time, &
@@ -2189,25 +2246,37 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
         'Sea Surface Temperature', 'degC', conversion=US%C_to_degC, &
         cmor_field_name='tos', cmor_long_name='Sea Surface Temperature', &
         cmor_standard_name='sea_surface_temperature')
+    IDs%id_sst_deconv = register_diag_field('ocean_model', 'SST_DECONV', diag%axesT1, Time, &
+        'Sea Surface Temperature, Deconvolved', 'degC', conversion=US%C_to_degC)
     IDs%id_sst_sq = register_diag_field('ocean_model', 'SST_sq', diag%axesT1, Time, &
         'Sea Surface Temperature Squared', 'degC2', conversion=US%C_to_degC**2, &
         cmor_field_name='tossq', cmor_long_name='Square of Sea Surface Temperature ', &
         cmor_standard_name='square_of_sea_surface_temperature')
+    IDs%id_sst_deconv_sq = register_diag_field('ocean_model', 'SST_DECONV_sq', diag%axesT1, Time, &
+        'Sea Surface Temperature, Deconvolved, Squared', 'degC2', conversion=US%C_to_degC**2)
     IDs%id_sss = register_diag_field('ocean_model', 'SSS', diag%axesT1, Time, &
         'Sea Surface Salinity', 'psu', conversion=US%S_to_ppt, &
         cmor_field_name='sos', cmor_long_name='Sea Surface Salinity', &
         cmor_standard_name='sea_surface_salinity')
+    IDs%id_sss_deconv = register_diag_field('ocean_model', 'SSS_DECONV', diag%axesT1, Time, &
+        'Sea Surface Salinity, Deconvolved', 'psu', conversion=US%S_to_ppt)
     IDs%id_sss_sq = register_diag_field('ocean_model', 'SSS_sq', diag%axesT1, Time, &
         'Sea Surface Salinity Squared', 'psu2', conversion=US%S_to_ppt**2, &
         cmor_field_name='sossq', cmor_long_name='Square of Sea Surface Salinity ', &
         cmor_standard_name='square_of_sea_surface_salinity')
+    IDs%id_sss_deconv_sq = register_diag_field('ocean_model', 'SSS_DECONV_sq', diag%axesT1, Time, &
+        'Sea Surface Salinity, Deconvolved, Squared', 'psu2', conversion=US%S_to_ppt**2)
     if (tv%T_is_conT) then
       IDs%id_sstcon = register_diag_field('ocean_model', 'conSST', diag%axesT1, Time, &
           'Sea Surface Conservative Temperature', 'Celsius', conversion=US%C_to_degC)
+      IDs%id_sstcon_deconv = register_diag_field('ocean_model', 'conSST_DECONV', diag%axesT1, Time,&
+          'Sea Surface Conservative Temperature, Deconvolved', 'Celsius', conversion=US%C_to_degC)
     endif
     if (tv%S_is_absS) then
       IDs%id_sssabs = register_diag_field('ocean_model', 'absSSS', diag%axesT1, Time, &
           'Sea Surface Absolute Salinity', 'g kg-1', conversion=US%S_to_ppt)
+      IDs%id_sssabs_deconv = register_diag_field('ocean_model', 'absSSS_DECONV', diag%axesT1, Time, &
+          'Sea Surface Absolute Salinity, Deconvolved', 'g kg-1', conversion=US%S_to_ppt)
     endif
     if (associated(tv%frazil)) then
       IDs%id_fraz = register_diag_field('ocean_model', 'frazil', diag%axesT1, Time, &
