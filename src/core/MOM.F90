@@ -4164,7 +4164,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
     call pass_var(sfc_state%SSS, G%domain)
     call pass_var(sfc_state%SST, G%domain)
     call pass_vector(sfc_state%u, sfc_state%v, G%domain)
-    do j=jsc,jec ; do i=isc,iec
+    do j=js,je ; do i=is,ie
       if (G%near_land_T /= 0.0) then
         sfc_state%SSS_deconv(i,j) = sfc_deconv_const * sfc_state%SSS(i,j) &
                           - CS%sfc_deconv_factor * ( (sfc_state%SSS(i-1,j) + sfc_state%SSS(i,j-1)) &
@@ -4179,7 +4179,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
     enddo ; enddo
     call pass_var(sfc_state%SSS_deconv, G%domain)
     call pass_var(sfc_state%SST_deconv, G%domain)
-    do j=jsc,jec ; do I=IscB,IecB
+    do j=js,je ; do I=IscB,IecB
       if (G%near_land_u /= 0.0) then
         sfc_state%u_deconv(I,j) = sfc_deconv_const * sfc_state%u(I,j) &
                               - CS%sfc_deconv_factor * ( (sfc_state%u(I-1,j) + sfc_state%u(I,j-1)) &
@@ -4188,7 +4188,7 @@ subroutine extract_surface_state(CS, sfc_state_in)
         sfc_state%u_deconv(I,j) = sfc_state%u(I,j)
       endif
     enddo ; enddo
-    do J=JscB,JecB ; do i=isc,iec
+    do J=JscB,JecB ; do i=is,ie
       if (G%near_land_v /= 0.0) then
         sfc_state%v_deconv(I,j) = sfc_deconv_const * sfc_state%v(I,j) &
                               - CS%sfc_deconv_factor * ( (sfc_state%v(I-1,j) + sfc_state%v(I,j-1)) &
