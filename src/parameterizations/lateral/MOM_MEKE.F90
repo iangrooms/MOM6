@@ -1,9 +1,12 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Implements the Mesoscale Eddy Kinetic Energy framework
 !! with topographic beta effect included in computing beta in Rhines scale
 
 module MOM_MEKE
 
-! This file is part of MOM6. See LICENSE.md for the license.
 use iso_fortran_env,       only : real32
 
 use MOM_coms,              only : PE_here
@@ -1721,11 +1724,13 @@ logical function MEKE_init(Time, G, GV, US, param_file, diag, dbcomms_CS, CS, ME
   if (coldStart) CS%initialize = .false.
   if (CS%initialize) call MOM_error(WARNING, &
                        "MEKE_init: Initializing MEKE with a local equilibrium balance.")
-  if (.not.query_initialized(MEKE%Le, "MEKE_Le", restart_CS) .and. allocated(MEKE%Le)) then
-    !$OMP parallel do default(shared)
-    do j=js,je ; do i=is,ie
-      MEKE%Le(i,j) = sqrt(G%areaT(i,j))
-    enddo ; enddo
+  if (allocated(MEKE%Le)) then
+    if (.not.query_initialized(MEKE%Le, "MEKE_Le", restart_CS)) then
+      !$OMP parallel do default(shared)
+      do j=js,je ; do i=is,ie
+        MEKE%Le(i,j) = sqrt(G%areaT(i,j))
+      enddo ; enddo
+    endif
   endif
 
   ! Set up group passes.  In the case of a restart, these fields need a halo update now.

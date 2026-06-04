@@ -1,8 +1,10 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Configures the model for the "DOME" experiment.
 !! DOME = Dynamics of Overflows and Mixing Experiment
 module DOME_initialization
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_sponge, only : sponge_CS, set_up_sponge_field, initialize_sponge
 use MOM_dyn_horgrid, only : dyn_horgrid_type
@@ -504,8 +506,7 @@ subroutine DOME_set_OBC_data(OBC, tv, G, GV, US, PF, tr_Reg)
   ! All tracers but the first have 0 concentration in their inflows. As 0 is the
   ! default value for the inflow concentrations, the following calls are unnecessary.
   do m=2,tr_Reg%ntr
-    if (m < 10) then ; write(name,'("tr_D",I1.1)') m
-    else ; write(name,'("tr_D",I2.2)') m ; endif
+    write(name,'("tr_D",I0)') m
     call tracer_name_lookup(tr_Reg, ntr_id, tr_ptr, name)
     call register_segment_tracer(tr_ptr, ntr_id, PF, GV, OBC%segment(1), OBC_scalar=0.0)
   enddo

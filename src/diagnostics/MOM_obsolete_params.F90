@@ -1,7 +1,10 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Methods for testing for, and list of, obsolete run-time parameters.
 module MOM_obsolete_params
 
-! This file is part of MOM6. See LICENSE.md for the license.
 ! This module was first conceived and written by Robert Hallberg, July 2010.
 
 use MOM_error_handler, only : MOM_error, FATAL, WARNING, is_root_pe
@@ -108,9 +111,22 @@ subroutine find_obsolete_params(param_file)
   call obsolete_real(param_file, "MIN_Z_DIAG_INTERVAL")
   call obsolete_char(param_file, "Z_OUTPUT_GRID_FILE")
 
+  call obsolete_logical(param_file, "CFL_BASED_TRUNCATIONS", .true.)
+  call obsolete_logical(param_file, "KD_BACKGROUND_VIA_KDML_BUG", .false.)
+  call obsolete_logical(param_file, "USE_DIABATIC_TIME_BUG", .false.)
+
   call read_param(param_file, "INTERPOLATE_SPONGE_TIME_SPACE", test_logic)
   call obsolete_logical(param_file, "NEW_SPONGES", warning_val=test_logic, &
                         hint="Use INTERPOLATE_SPONGE_TIME_SPACE instead.")
+
+  test_logic = .true. ; call read_param(param_file, "BOUND_KH", test_logic)
+  call obsolete_logical(param_file, "BETTER_BOUND_KH", warning_val=test_logic, hint="Use BOUND_KH alone.")
+  test_logic = .true. ; call read_param(param_file, "BOUND_AH", test_logic)
+  call obsolete_logical(param_file, "BETTER_BOUND_AH", warning_val=test_logic, hint="Use BOUND_AH alone.")
+
+  test_logic = .false. ; call read_param(param_file, "UNSPLIT_DT_VISC_BUG", test_logic)
+  call obsolete_logical(param_file, "FIX_UNSPLIT_DT_VISC_BUG", warning_val=(.not.test_logic), &
+                        hint="Use UNSPLIT_DT_VISC_BUG instead, but with the reversed meaning.")
 
   call obsolete_logical(param_file, "SMOOTH_RI", hint="Instead use N_SMOOTH_RI.")
 

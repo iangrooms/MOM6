@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Functions that calculate the surface wind stresses and fluxes of buoyancy
 !! or temperature/salinity and fresh water, in ocean-only (solo) mode.
 !!
@@ -6,8 +10,6 @@
 !! return quickly without doing anything.  In addition, any I/O of forcing
 !! fields is controlled by surface_forcing_init, located in this file.
 module MOM_surface_forcing
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_constants,           only : hlv, hlf
 use MOM_cpu_clock,           only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
@@ -116,7 +118,7 @@ type, public :: surface_forcing_CS ; private
                              !! rotationally invariant and more likely to be the same between compilers.
   logical :: ustar_gustless_bug   !< If true, include a bug in the time-averaging of the
                                   !! gustless wind friction velocity.
-  logical :: use_marbl_tracers              !< If true, allocate memory for forcing needed by MARBL
+  logical :: use_MARBL_tracers              !< If true, allocate memory for forcing needed by MARBL
   ! if WIND_CONFIG=='scurves' then use the following to define a piecewise scurve profile
   real :: scurves_ydata(20) = 90. !< Latitudes of scurve nodes [degreesN]
   real :: scurves_taux(20) = 0.   !< Zonal wind stress values at scurve nodes [R L Z T-2 ~> Pa]
@@ -287,7 +289,7 @@ subroutine set_forcing(sfc_state, forces, fluxes, day_start, day_interval, G, US
     ! Allocate memory for the mechanical and thermodynamic forcing fields.
     call allocate_mech_forcing(G, forces, stress=.true., ustar=.not.CS%nonBous, press=.true., tau_mag=CS%nonBous)
 
-    call allocate_forcing_type(G, fluxes, ustar=.not.CS%nonBous, marbl=CS%use_marbl_tracers, tau_mag=CS%nonBous, &
+    call allocate_forcing_type(G, fluxes, ustar=.not.CS%nonBous, marbl=CS%use_MARBL_tracers, tau_mag=CS%nonBous, &
                                fix_accum_bug=.not.CS%ustar_gustless_bug)
     if (trim(CS%buoy_config) /= "NONE") then
       if ( CS%use_temperature ) then
@@ -384,7 +386,7 @@ subroutine set_forcing(sfc_state, forces, fluxes, day_start, day_interval, G, US
     endif
   endif
 
-  if (CS%use_marbl_tracers) then
+  if (CS%use_MARBL_tracers) then
     call MARBL_forcing_from_data_override(fluxes, day_center, G, US, CS)
   endif
 
@@ -2148,7 +2150,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, tracer_flow_C
     call read_netCDF_data(filename, 'gustiness', CS%gust, G%Domain, &
                           rescale=US%Pa_to_RLZ_T2*US%L_to_Z) ! units in file should be [Pa]
   endif
-  call get_param(param_file, mdl, "USE_MARBL_TRACERS", CS%use_marbl_tracers, &
+  call get_param(param_file, mdl, "USE_MARBL_TRACERS", CS%use_MARBL_tracers, &
                   default=.false., do_not_log=.true.)
 
 !  All parameter settings are now known.
@@ -2181,7 +2183,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, tracer_flow_C
   endif
 
   ! Set up MARBL forcing control structure
-  call MARBL_forcing_init(G, US, param_file, diag, Time, CS%inputdir, CS%use_marbl_tracers, &
+  call MARBL_forcing_init(G, US, param_file, diag, Time, CS%inputdir, CS%use_MARBL_tracers, &
       CS%marbl_forcing_CSp)
 
   call register_forcing_type_diags(Time, diag, US, CS%use_temperature, CS%handles)

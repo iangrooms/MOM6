@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Debug accelerations at a given point
 !!
 !!    The two subroutines in this file write out all of the terms
@@ -6,8 +10,6 @@
 !! threshold, in order to determine which term is culpable.
 !! often this is done for debugging purposes.
 module MOM_PointAccel
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_diag_mediator, only : diag_ctrl
 use MOM_domains, only : pe_here
@@ -157,8 +159,8 @@ subroutine write_u_accel(I, j, um, hin, ADp, CDp, dt, G, GV, US, CS, vel_rpt, st
     call get_date(CS%Time, yr, mo, day, hr, minute, sec)
     call get_time((CS%Time - set_date(yr, 1, 1, 0, 0, 0)), sec, yearday)
     write (file,'(/,"--------------------------")')
-    write (file,'(/,"Time ",i5,i4,F6.2," U-velocity violation at ",I4,": ",2(I3), &
-        & " (",F7.2," E ",F7.2," N) Layers ",I3," to ",I3,". dt = ",1PG10.4)') &
+    write (file,'(/,"Time ",I0," ",I0," ",F6.2," U-velocity violation at ",I0,": ",I0,", ",I0, &
+        & " (",F7.2," E ",F7.2," N) Layers ",I0," to ",I0,". dt = ",1PG10.4)') &
         yr, yearday, (REAL(sec)/3600.0), pe_here(), I, j, &
         G%geoLonCu(I,j), G%geoLatCu(I,j), ks, ke, US%T_to_s*dt
 
@@ -497,8 +499,8 @@ subroutine write_v_accel(i, J, vm, hin, ADp, CDp, dt, G, GV, US, CS, vel_rpt, st
     call get_date(CS%Time, yr, mo, day, hr, minute, sec)
     call get_time((CS%Time - set_date(yr, 1, 1, 0, 0, 0)), sec, yearday)
     write (file,'(/,"--------------------------")')
-    write (file,'(/,"Time ",i5,i4,F6.2," V-velocity violation at ",I4,": ",2(I3), &
-        & " (",F7.2," E ",F7.2," N) Layers ",I3," to ",I3,". dt = ",1PG10.4)') &
+    write (file,'(/,"Time ",I0," ",I0," ",F6.2," V-velocity violation at ",I0,": ",I0,", ",I0, &
+        & " (",F7.2," E ",F7.2," N) Layers ",I0," to ",I0,". dt = ",1PG10.4)') &
         yr, yearday, (REAL(sec)/3600.0), pe_here(), i, J, &
         G%geoLonCv(i,J), G%geoLatCv(i,J), ks, ke, US%T_to_s*dt
 

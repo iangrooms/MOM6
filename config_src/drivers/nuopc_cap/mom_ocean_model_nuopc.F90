@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Top-level module for the MOM6 ocean model in coupled mode.
 module MOM_ocean_model_nuopc
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 ! This is the top level module for the MOM6 ocean model.  It contains routines
 ! for initialization, termination and update of ocean model state.  This
@@ -62,6 +64,7 @@ use MOM_surface_forcing_nuopc, only : convert_IOB_to_forces, ice_ocn_bnd_type_ch
 use MOM_surface_forcing_nuopc, only : ice_ocean_boundary_type, surface_forcing_CS
 use MOM_surface_forcing_nuopc, only : forcing_save_restart
 use get_stochy_pattern_mod,  only : write_stoch_restart_ocn
+use stochy_data_mod,         only : stoch_restfile
 use iso_fortran_env,           only : int64
 
 #include <MOM_memory.h>
@@ -81,6 +84,7 @@ public ice_ocn_bnd_type_chksum
 public ocean_public_type_chksum
 public get_ocean_grid, query_ocean_state
 public get_eps_omesh
+public stoch_restart_needed
 
 !> This type is used for communication with other components via the FMS coupler.
 !! The element names and types can be changed only with great deliberation, hence
@@ -178,11 +182,12 @@ type, public :: ocean_state_type ; private
                               !! steps can span multiple coupled time steps.
   logical :: diabatic_first   !< If true, apply diabatic and thermodynamic
                               !! processes before time stepping the dynamics.
-  logical :: do_sppt         !< If true, stochastically perturb the diabatic and
-                             !! write restarts
-  logical :: pert_epbl       !< If true, then randomly perturb the KE dissipation and
-                             !! genration termsand write restarts
-
+  logical :: do_sppt          !< If true, stochastically perturb the diabatic
+                              !! tendencies and write restarts
+  logical :: pert_epbl        !< If true, then randomly perturb the KE dissipation and
+                              !! generation terms and write restarts
+  logical :: do_skeb          !< If true, stochastically perturb the ocean lateral
+                              !! velocity and write restarts
   real :: eps_omesh           !< Max allowable difference between ESMF mesh and MOM6
                               !! domain coordinates
 
@@ -266,6 +271,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
   integer :: secs, days
   type(param_file_type) :: param_file !< A structure to parse for run-time parameters
   logical :: use_temperature
+  integer :: i, k
 
   call callTree_enter("ocean_model_init(), ocean_model_MOM.F90")
   if (associated(OS)) then
@@ -281,6 +287,19 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
   call time_interp_external_init
 
   OS%Time = Time_in
+  if(present(input_restart_file)) then
+      k = index(input_restart_file, ' ')
+      if (k==0) k = len_trim(input_restart_file)
+      i = index(input_restart_file, '.r.')
+      if (i>0) then
+         stoch_restfile = input_restart_file(1:i)//'r_stoch'//input_restart_file(i+2:k)
+
+         if (is_root_pe()) then
+           write(stdout,*) 'input_restart_file =', input_restart_file
+           write(stdout,*) 'stoch_restfile =', stoch_restfile
+         endif
+      endif
+  endif
   call initialize_MOM(OS%Time, Time_init, param_file, OS%dirs, OS%MOM_CSp, &
                       Time_in, offline_tracer_mode=OS%offline_tracer_mode, &
                       input_restart_file=input_restart_file, &
@@ -387,7 +406,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
   ! vertical integrals, since the related 3-d sums are not negligible in cost.
   call allocate_surface_state(OS%sfc_state, OS%grid, use_temperature, &
                               do_integrals=.true., gas_fields_ocn=gas_fields_ocn, &
-                              use_meltpot=use_melt_pot, use_marbl_tracers=OS%use_MARBL,
+                              use_meltpot=use_melt_pot, use_marbl_tracers=OS%use_MARBL, &
                               sfc_deconv=OS%compute_sfc_deconv)
   call get_param(param_file, mdl, "USE_SFC_DECONV", OS%sfc_state%use_sfc_deconv, &
        "If true, uses deconvolved surface fields to compute air-sea fluxes.", default=.false.)
@@ -450,6 +469,10 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
                  "If true, then stochastically perturb the kinetic energy "//&
                  "production and dissipation terms.  Amplitude and correlations are "//&
                  "controlled by the nam_stoch namelist in the UFS model only.", &
+                 default=.false.)
+  call get_param(param_file, mdl, "DO_SKEB", OS%do_skeb, &
+                 "If true, then stochastically perturb the currents "//&
+                 "using the stochastic kinetic energy backscatter scheme.",&
                  default=.false.)
 
   call close_param_file(param_file)
@@ -549,9 +572,6 @@ subroutine update_ocean_model(Ice_ocean_boundary, OS, Ocean_sfc, &
                              OS%grid, OS%US, OS%forcing_CSp)
 
   if (OS%fluxes%fluxes_used) then
-
-    ! enable_averages() is necessary to post forcing fields to diagnostics
-    call enable_averages(dt_coupling, OS%Time + Ocean_coupling_time_step, OS%diag)
 
     if (do_thermo) &
       call convert_IOB_to_fluxes(Ice_ocean_boundary, OS%fluxes, index_bnds, OS%Time, dt_coupling, &
@@ -777,8 +797,8 @@ subroutine ocean_model_restart(OS, timestamp, restartname, stoch_restartname, nu
     endif
   endif
   if (present(stoch_restartname)) then
-    if (OS%do_sppt .OR. OS%pert_epbl) then
-      call write_stoch_restart_ocn('RESTART/'//trim(stoch_restartname))
+    if (stoch_restart_needed(OS)) then
+      call write_stoch_restart_ocn(trim(stoch_restartname))
     endif
   endif
 
@@ -1186,7 +1206,6 @@ end subroutine Ocean_stock_pe
 
 !> Write out checksums for fields from the ocean surface state
 subroutine ocean_public_type_chksum(id, timestep, ocn)
-
   character(len=*),        intent(in) :: id  !< An identifying string for this call
   integer,                 intent(in) :: timestep !< The number of elapsed timesteps
   type(ocean_public_type), intent(in) :: ocn !< A structure containing various publicly
@@ -1212,8 +1231,8 @@ end subroutine ocean_public_type_chksum
 
 subroutine get_ocean_grid(OS, Gridp)
   ! Obtain the ocean grid.
-  type(ocean_state_type) :: OS
-  type(ocean_grid_type) , pointer :: Gridp
+  type(ocean_state_type), intent(in) :: OS
+  type(ocean_grid_type) , pointer, intent(out) :: Gridp
 
   Gridp => OS%grid
   return
@@ -1221,8 +1240,14 @@ end subroutine get_ocean_grid
 
 !> Returns eps_omesh read from param file
 real function get_eps_omesh(OS)
-  type(ocean_state_type) :: OS
+  type(ocean_state_type), intent(in) :: OS
   get_eps_omesh = OS%eps_omesh; return
 end function
+
+!> Returns true if a stochastic restart file is needed
+logical function stoch_restart_needed(OS)
+  type(ocean_state_type), intent(in) :: OS
+  stoch_restart_needed = OS%do_sppt .OR. OS%pert_epbl .OR. OS%do_skeb
+end function stoch_restart_needed
 
 end module MOM_ocean_model_nuopc
