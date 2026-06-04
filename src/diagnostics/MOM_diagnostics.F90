@@ -1635,7 +1635,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
   if (tv%T_is_conT) then
     ! Internal T&S variables are conservative temperature & absolute salinity
     if (IDs%id_sstcon > 0) call post_data(IDs%id_sstcon, sfc_state%SST, diag, mask=G%mask2dT)
-    if (IDs%is_sstcon_deconv > 0) &
+    if (IDs%id_sstcon_deconv > 0) &
       call post_data(IDs%id_sstcon_deconv, sfc_state%SST_deconv, diag, mask=G%mask2dT)
     ! Use TEOS-10 function calls convert T&S diagnostics from conservative temp
     ! to potential temperature.
