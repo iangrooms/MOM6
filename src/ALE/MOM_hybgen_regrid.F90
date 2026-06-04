@@ -1,8 +1,10 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> This module contains the hybgen regridding routines from HYCOM, with minor
 !! modifications to follow the MOM6 coding conventions
 module MOM_hybgen_regrid
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_EOS,              only : EOS_type, calculate_density
 use MOM_error_handler,    only : MOM_mesg, MOM_error, FATAL, WARNING, assert
@@ -988,12 +990,12 @@ subroutine hybgen_column_regrid(CS, nk, thkbot, Rcv_tgt, &
     ! Verify that everything is consistent.
     do k=1,nk
       if (abs((h_col(k) - h_in(k)) + (dp_int(K) - dp_int(K+1))) > 1.0e-13*max(p_int(nk+1), CS%onem)) then
-        write(mesg, '("k ",i4," h ",es13.4," h_in ",es13.4, " dp ",2es13.4," err ",es13.4)') &
+        write(mesg, '("k ",I0," h ",es13.4," h_in ",es13.4, " dp ",2es13.4," err ",es13.4)') &
               k, h_col(k), h_in(k), dp_int(K), dp_int(K+1), (h_col(k) - h_in(k)) + (dp_int(K) - dp_int(K+1))
         call MOM_error(FATAL, "Mismatched thickness changes in hybgen_regrid: "//trim(mesg))
       endif
       if (h_col(k) < 0.0) then ! Could instead do: -1.0e-15*max(p_int(nk+1), CS%onem)) then
-        write(mesg, '("k ",i4," h ",es13.4," h_in ",es13.4, " dp ",2es13.4, " fixlay ",i4)') &
+        write(mesg, '("k ",I0," h ",es13.4," h_in ",es13.4, " dp ",2es13.4, " fixlay ",I0)') &
               k, h_col(k), h_in(k), dp_int(K), dp_int(K+1), fixlay
         call MOM_error(FATAL, "Significantly negative final thickness in hybgen_regrid: "//trim(mesg))
       endif

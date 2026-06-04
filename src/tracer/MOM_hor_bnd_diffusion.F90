@@ -1,9 +1,11 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Calculates and applies diffusive fluxes as a parameterization of horizontal mixing (non-neutral) by
 !! mesoscale eddies near the top and bottom (to be implemented) boundary layers of the ocean.
 
 module MOM_hor_bnd_diffusion
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock,             only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,             only : CLOCK_MODULE
@@ -234,7 +236,7 @@ subroutine hor_bnd_diffusion(G, GV, US, h, Coef_x, Coef_y, dt, Reg, visc, CS)
     tracer => Reg%tr(m)
 
     if (CS%debug) then
-      call hchksum(tracer%t, "before HBD "//tracer%name, G%HI, scale=tracer%conc_scale)
+      call hchksum(tracer%t, "before HBD "//tracer%name, G%HI, unscale=tracer%conc_scale)
     endif
 
     ! for diagnostics
@@ -290,7 +292,7 @@ subroutine hor_bnd_diffusion(G, GV, US, h, Coef_x, Coef_y, dt, Reg, visc, CS)
     endif
 
     if (CS%debug) then
-      call hchksum(tracer%t, "after HBD "//tracer%name, G%HI, scale=tracer%conc_scale)
+      call hchksum(tracer%t, "after HBD "//tracer%name, G%HI, unscale=tracer%conc_scale)
       ! tracer (native grid) integrated tracer amounts before and after HBD
       tracer_int_prev = global_mass_integral(h, G, GV, tracer_old, scale=tracer%conc_scale)
       tracer_int_end = global_mass_integral(h, G, GV, tracer%t, scale=tracer%conc_scale)

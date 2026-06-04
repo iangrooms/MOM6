@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Main routine for lateral (along surface or neutral) diffusion of tracers
 module MOM_tracer_hor_diff
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock,                only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,                only : CLOCK_MODULE, CLOCK_ROUTINE
@@ -505,21 +507,43 @@ subroutine tracer_hordiff(h, dt, MEKE, VarMix, visc, G, GV, US, CS, Reg, tv, do_
         enddo
       enddo
     enddo
+
     if (CS%KhTr_use_vert_struct) then
-      do K=2,nz+1
-        do J=js-1,je
-          do i=is,ie
-            Coef_y(i,J,K) = Coef_y(i,J,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i,j+1,k-1) )
+      if (CS%full_depth_khtr_min) then
+        do K=2,nz+1
+          do J=js-1,je
+            do i=is,ie
+              Coef_y(i,J,K) = Coef_y(i,J,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i,j+1,k-1) )
+              Coef_min = I_numitts * dt * (CS%KhTr_min*(G%dx_Cv(i,J)*G%IdyCv(i,J)))
+              Coef_y(i,J,K) = max(Coef_y(i,J,K), Coef_min)
+            enddo
           enddo
         enddo
-      enddo
-      do k=2,nz+1
-        do j=js,je
-          do I=is-1,ie
-            Coef_x(I,j,K) = Coef_x(I,j,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i+1,j,k-1) )
+        do k=2,nz+1
+          do j=js,je
+            do I=is-1,ie
+              Coef_x(I,j,K) = Coef_x(I,j,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i+1,j,k-1) )
+              Coef_min = I_numitts * dt * (CS%KhTr_min*(G%dy_Cu(I,j)*G%IdxCu(I,j)))
+              Coef_x(I,j,K) = max(Coef_x(I,j,K), Coef_min)
+            enddo
           enddo
         enddo
-      enddo
+      else
+        do K=2,nz+1
+          do J=js-1,je
+            do i=is,ie
+              Coef_y(i,J,K) = Coef_y(i,J,1) * 0.5 * ( VarMix%ebt_struct(i,j,k-1) + VarMix%ebt_struct(i,j+1,k-1) )
+            enddo
+          enddo
+        enddo
+        do k=2,nz+1
+          do j=js,je
+            do I=is-1,ie
+              Coef_x(I,j,K) = Coef_x(I,j,1) * 0.5 * ( VarMix%ebt_struct(i,j,k-1) + VarMix%ebt_struct(i+1,j,k-1) )
+            enddo
+          enddo
+        enddo
+      endif
     endif
 
     do itt=1,num_itts
@@ -633,13 +657,24 @@ subroutine tracer_hordiff(h, dt, MEKE, VarMix, visc, G, GV, US, CS, Reg, tv, do_
       Kh_u(I,j,:) = G%mask2dCu(I,j)*Kh_u(I,j,1)
     enddo ; enddo
     if (CS%KhTr_use_vert_struct) then
-      do K=2,nz+1
-        do j=js,je
-          do I=is-1,ie
-            Kh_u(I,j,K) = Kh_u(I,j,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i+1,j,k-1) )
+      if (CS%full_depth_khtr_min) then
+        do K=2,nz+1
+          do j=js,je
+            do I=is-1,ie
+              Kh_u(I,j,K) = Kh_u(I,j,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i+1,j,k-1) )
+              Kh_u(I,j,K) = max(Kh_u(I,j,K), CS%KhTr_min)
+            enddo
           enddo
         enddo
-      enddo
+      else
+        do K=2,nz+1
+          do j=js,je
+            do I=is-1,ie
+              Kh_u(I,j,K) = Kh_u(I,j,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i+1,j,k-1) )
+            enddo
+          enddo
+        enddo
+      endif
     endif
     !call post_data(CS%id_KhTr_u, Kh_u, CS%diag, is_static=.false., mask=G%mask2dCu)
     call post_data(CS%id_KhTr_u, Kh_u, CS%diag)
@@ -649,13 +684,24 @@ subroutine tracer_hordiff(h, dt, MEKE, VarMix, visc, G, GV, US, CS, Reg, tv, do_
       Kh_v(i,J,:) = G%mask2dCv(i,J)*Kh_v(i,J,1)
     enddo ; enddo
     if (CS%KhTr_use_vert_struct) then
-      do K=2,nz+1
-        do J=js-1,je
-          do i=is,ie
-            Kh_v(i,J,K) = Kh_v(i,J,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i,j+1,k-1) )
+      if (CS%full_depth_khtr_min) then
+        do K=2,nz+1
+          do J=js-1,je
+            do i=is,ie
+              Kh_v(i,J,K) = Kh_v(i,J,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i,j+1,k-1) )
+              Kh_v(i,J,K) = max(Kh_v(i,J,K), CS%KhTr_min)
+            enddo
           enddo
         enddo
-      enddo
+      else
+        do K=2,nz+1
+          do J=js-1,je
+            do i=is,ie
+              Kh_v(i,J,K) = Kh_v(i,J,1) * 0.5 * ( VarMix%khtr_struct(i,j,k-1) + VarMix%khtr_struct(i,j+1,k-1) )
+            enddo
+          enddo
+        enddo
+      endif
     endif
     !call post_data(CS%id_KhTr_v, Kh_v, CS%diag, is_static=.false., mask=G%mask2dCv)
     call post_data(CS%id_KhTr_v, Kh_v, CS%diag)
@@ -675,10 +721,19 @@ subroutine tracer_hordiff(h, dt, MEKE, VarMix, visc, G, GV, US, CS, Reg, tv, do_
       Kh_h(i,j,:) = normalize*G%mask2dT(i,j)*((Kh_u(I-1,j,1)+Kh_u(I,j,1)) + &
                                              (Kh_v(i,J-1,1)+Kh_v(i,J,1)))
       if (CS%KhTr_use_vert_struct) then
-        do K=2,nz+1
-          Kh_h(i,j,K) = normalize*G%mask2dT(i,j)*VarMix%khtr_struct(i,j,k-1)*((Kh_u(I-1,j,1)+Kh_u(I,j,1)) + &
-                                                                            (Kh_v(i,J-1,1)+Kh_v(i,J,1)))
-        enddo
+        if (CS%full_depth_khtr_min) then
+          do K=2,nz+1
+            Kh_h(i,j,K) = normalize*G%mask2dT(i,j)*VarMix%khtr_struct(i,j,k-1)*((Kh_u(I-1,j,1)+Kh_u(I,j,1)) + &
+                                                                              (Kh_v(i,J-1,1)+Kh_v(i,J,1)))
+            Kh_h(i,j,K) = max(Kh_h(i,j,K), CS%KhTr_min)
+          enddo
+
+        else
+          do K=2,nz+1
+            Kh_h(i,j,K) = normalize*G%mask2dT(i,j)*VarMix%khtr_struct(i,j,k-1)*((Kh_u(I-1,j,1)+Kh_u(I,j,1)) + &
+                                                                              (Kh_v(i,J-1,1)+Kh_v(i,J,1)))
+          enddo
+        endif
       endif
     enddo ; enddo
     !call post_data(CS%id_KhTr_h, Kh_h, CS%diag, is_static=.false., mask=G%mask2dT)
@@ -1716,12 +1771,11 @@ subroutine tracer_hor_diff_init(Time, G, GV, US, param_file, diag, EOS, diabatic
                  "along-isopycnal mixed layer to interior mixing code, while higher values use "//&
                  "mathematically equivalent expressions that recover rotational symmetry "//&
                  "when DIFFUSE_ML_TO_INTERIOR is true.", &
-                 default=20240101, do_not_log=.not.CS%Diffuse_ML_interior)
-                 !### Change the default later to default_answer_date.
+                 default=default_answer_date, do_not_log=.not.CS%Diffuse_ML_interior)
   call get_param(param_file, mdl, "HOR_DIFF_LIMIT_BUG", CS%limit_bug, &
                  "If true and the answer date is 20240330 or below, use a rotational symmetry "//&
                  "breaking bug when limiting the tracer properties in tracer_epipycnal_ML_diff.", &
-                 default=.true., do_not_log=((.not.CS%Diffuse_ML_interior).or.(CS%answer_date>=20240331)))
+                 default=.false., do_not_log=((.not.CS%Diffuse_ML_interior).or.(CS%answer_date>=20240331)))
   CS%ML_KhTR_scale = 1.0
   if (CS%Diffuse_ML_interior) then
     call get_param(param_file, mdl, "ML_KHTR_SCALE", CS%ML_KhTR_scale, &

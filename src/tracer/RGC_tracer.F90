@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> This module contains the routines used to set up a
 !! dynamically passive tracer.
 !! Set up and use passive tracers requires the following:
@@ -10,8 +14,6 @@
 !*********+*********+*********+*********+*********+*********+***********
 
 module RGC_tracer
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_diag_mediator, only : diag_ctrl
 use MOM_error_handler, only : MOM_error, FATAL, WARNING
@@ -119,8 +121,7 @@ function register_RGC_tracer(G, GV, param_file, CS, tr_Reg, restart_CS)
   endif
 
   do m=1,NTR
-    if (m < 10) then ; write(name,'("tr_RGC",I1.1)') m
-    else ; write(name,'("tr_RGC",I2.2)') m ; endif
+    write(name,'("tr_RGC",I0)') m
     write(longname,'("Concentration of RGC Tracer ",I2.2)') m
     CS%tr_desc(m) = var_desc(name, units="kg kg-1", longname=longname, caller=mdl)
 

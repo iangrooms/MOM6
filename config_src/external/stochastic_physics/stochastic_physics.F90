@@ -1,9 +1,11 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 ! The are stubs for ocean stochastic physics
 ! the fully functional code is available at
 ! http://github.com/noaa-psd/stochastic_physics
 module stochastic_physics
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_error_handler, only : MOM_error, WARNING
 
@@ -58,7 +60,7 @@ end subroutine init_stochastic_physics_ocn
 !> Determines the stochastic physics perturbations.
 subroutine run_stochastic_physics_ocn(sppt_wts, skeb_wts, t_rp1, t_rp2)
   real, intent(inout) :: sppt_wts(:,:) !< array containing random weights for SPPT range [0,2]
-  real, intent(inout) :: skeb_wts(:,:) !< array containing random weights for SKEB
+  real, intent(inout) :: skeb_wts(:,:) !< array containing random weights for SKEB with units of a length [m]
   real, intent(inout) :: t_rp1(:,:)    !< array containing random weights for ePBL
                                        !! perturbations (KE generation) range [0,2]
   real, intent(inout) :: t_rp2(:,:)    !< array containing random weights for ePBL

@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Interface to CVMix interior shear schemes
 module MOM_CVMix_shear
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 !> \author Brandon Reichl
 
@@ -35,6 +37,8 @@ type, public :: CVMix_shear_cs ; private
   integer :: n_smooth_ri                    !< Number of times to smooth Ri using a 1-2-1 filter
   real    :: Ri_zero                        !< LMD94 critical Richardson number [nondim]
   real    :: Nu_zero                        !< LMD94 maximum interior diffusivity [Z2 T-1 ~> m2 s-1]
+  real    :: Prandtl                        !< The turbulent Prandtl number to be used in the
+                                            !! CVMIX shear mixing [nondim]
   real    :: KPP_exp                        !< Exponent of unitless factor of diffusivities
                                             !! for KPP internal shear mixing scheme [nondim]
   real, allocatable, dimension(:,:,:) :: N2 !< Squared Brunt-Vaisala frequency [T-2 ~> s-2]
@@ -289,6 +293,9 @@ logical function CVMix_shear_init(Time, G, GV, US, param_file, diag, CS)
                  "NOTE this the internal mixing and this is "// &
                  "not for setting the boundary layer depth.", &
                  units="nondim", default=0.8)
+  call get_param(param_file, mdl, "PRANDTL_CVMIX_SHEAR", CS%Prandtl, &
+                 "The turbulent Prandtl number to be used in the "// &
+                 "CVMIX shear mixing.", units="nondim", default=1.0)
   call get_param(param_file, mdl, "KPP_EXP", CS%KPP_exp, &
                  "Exponent of unitless factor of diffusivities, "// &
                  "for KPP internal shear mixing scheme.", &
@@ -300,7 +307,8 @@ logical function CVMix_shear_init(Time, G, GV, US, param_file, diag, CS)
   call cvmix_init_shear(mix_scheme=CS%Mix_Scheme, &
                         KPP_nu_zero=US%Z2_T_to_m2_s*CS%Nu_Zero,   &
                         KPP_Ri_zero=CS%Ri_zero,   &
-                        KPP_exp=CS%KPP_exp)
+                        KPP_exp=CS%KPP_exp,       &
+                        Prandtl_shear=CS%Prandtl)
 
   ! Register diagnostics; allocation and initialization
   CS%diag => diag

@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> This module contains the routines used to apply sponge layers when using
 !! the ALE mode.
 !!
@@ -11,7 +15,6 @@
 module MOM_ALE_sponge
 
 
-! This file is part of MOM6. See LICENSE.md for the license.
 use MOM_array_transform, only: rotate_array
 use MOM_coms,          only : sum_across_PEs
 use MOM_diag_mediator, only : post_data, query_averaging_enabled, register_diag_field
@@ -728,7 +731,7 @@ subroutine set_up_ALE_sponge_field_fixed(sp_val, G, GV, f_ptr, CS,  &
 
   CS%fldno = CS%fldno + 1
   if (CS%fldno > MAX_FIELDS_) then
-    write(mesg,'("Increase MAX_FIELDS_ to at least ",I3," in MOM_memory.h or decrease &
+    write(mesg,'("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease &
            &the number of fields to be damped in the call to &
            &initialize_ALE_sponge." )') CS%fldno
     call MOM_error(FATAL,"set_up_ALE_sponge_field: "//mesg)
@@ -794,7 +797,7 @@ subroutine set_up_ALE_sponge_field_varying(filename, fieldname, Time, G, GV, US,
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   CS%fldno = CS%fldno + 1
   if (CS%fldno > MAX_FIELDS_) then
-    write(mesg, '("Increase MAX_FIELDS_ to at least ",I3," in MOM_memory.h or decrease "//&
+    write(mesg, '("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease "//&
         &"the number of fields to be damped in the call to initialize_ALE_sponge." )') CS%fldno
     call MOM_error(FATAL,"set_up_ALE_sponge_field: "//mesg)
   endif

@@ -1,3 +1,7 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Use control-theory to adjust the surface heat flux and precipitation.
 !!
 !! Adjustments are based on the time-mean or periodically (seasonally) varying
@@ -5,8 +9,6 @@
 !!
 !! The techniques behind this are described in Hallberg and Adcroft (2018, in prep.).
 module MOM_controlled_forcing
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_diag_mediator, only : post_data, query_averaging_enabled, enable_averages, disable_averaging
 use MOM_diag_mediator, only : register_diag_field, diag_ctrl, safe_alloc_ptr
@@ -485,8 +487,7 @@ subroutine register_ctrl_forcing_restarts(G, US, param_file, CS, restart_CS)
     allocate(CS%avg_SSS_anom(isd:ied,jsd:jed,CS%num_cycle), source=0.0)
     allocate(CS%avg_SSS(isd:ied,jsd:jed,CS%num_cycle), source=0.0)
 
-    write (period_str, '(i8)') CS%num_cycle
-    period_str = trim('p ')//trim(adjustl(period_str))
+    write (period_str, '("p ",I0)') CS%num_cycle
 
     call register_restart_field(CS%heat_cyc, "Ctrl_heat_cycle", .false., restart_CS, &
                   longname="Cyclical Control Heating", &

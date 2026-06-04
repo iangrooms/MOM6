@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Converts the input ESMF data (import data) to a MOM-specific data type (surface_forcing_CS).
 module MOM_surface_forcing_nuopc
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_coms,             only : reproducing_sum, field_chksum
 use MOM_constants,        only : hlv, hlf
@@ -81,7 +83,7 @@ type, public :: surface_forcing_CS ; private
                                 !! pressure limited by max_p_surf instead of the
                                 !! full atmospheric pressure.  The default is true.
   logical :: use_CFC            !< enables the MOM_CFC_cap tracer package.
-  logical :: use_marbl_tracers  !< enables the MARBL tracer package.
+  logical :: use_MARBL_tracers  !< enables the MARBL tracer package.
   logical :: enthalpy_cpl       !< Controls if enthalpy terms are provided by the coupler or computed
                                 !! internally.
   real :: gust_const            !< constant unresolved background gustiness for ustar [R L Z T-2 ~> Pa]
@@ -326,7 +328,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   if (fluxes%dt_buoy_accum < 0) then
     call allocate_forcing_type(G, fluxes, water=.true., heat=.true., ustar=.true., &
                                press=.true., fix_accum_bug=.not.CS%ustar_gustless_bug, &
-                               cfc=CS%use_CFC, marbl=CS%use_marbl_tracers, hevap=CS%enthalpy_cpl, &
+                               cfc=CS%use_CFC, marbl=CS%use_MARBL_tracers, hevap=CS%enthalpy_cpl, &
                                tau_mag=.true., ice_ncat=IOB%ice_ncat)
     call safe_alloc_ptr(fluxes%omega_w2x,isd,ied,jsd,jed)
     call safe_alloc_ptr(fluxes%sw_vis_dir,isd,ied,jsd,jed)
@@ -615,7 +617,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
 
   ! Copy MARBL-specific IOB fields into fluxes; also set some MARBL-specific forcings to other values
   ! (constants, values from netCDF, etc)
-  if (CS%use_marbl_tracers) &
+  if (CS%use_MARBL_tracers) &
     call convert_driver_fields_to_forcings(IOB%atm_fine_dust_flux, IOB%atm_coarse_dust_flux, &
                                            IOB%seaice_dust_flux, IOB%atm_bc_flux, IOB%seaice_bc_flux, &
                                            IOB%nhx_dep, IOB%noy_dep, IOB%atm_co2_prog, IOB%atm_co2_diag, &
@@ -1272,7 +1274,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, restore_salt,
   call get_param(param_file, mdl, "USE_CFC_CAP", CS%use_CFC, &
                  default=.false., do_not_log=.true.)
 
-  call get_param(param_file, mdl, "USE_MARBL_TRACERS", CS%use_marbl_tracers, &
+  call get_param(param_file, mdl, "USE_MARBL_TRACERS", CS%use_MARBL_tracers, &
                  default=.false., do_not_log=.true.)
 
   call get_param(param_file, mdl, "ENTHALPY_FROM_COUPLER", CS%enthalpy_cpl, &
@@ -1468,7 +1470,8 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, restore_salt,
 
   call register_forcing_type_diags(Time, diag, US, CS%use_temperature, CS%handles, &
                                    use_berg_fluxes=iceberg_flux_diags, use_waves=use_waves, &
-                                   use_cfcs=CS%use_CFC, use_glc_runoff=glc_runoff_diags)
+                                   use_cfcs=CS%use_CFC, use_MARBL_tracers=CS%use_MARBL_tracers, &
+                                    use_glc_runoff=glc_runoff_diags)
 
   call get_param(param_file, mdl, "ALLOW_FLUX_ADJUSTMENTS", CS%allow_flux_adjustments, &
                  "If true, allows flux adjustments to specified via the "//&
@@ -1483,7 +1486,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, restore_salt,
   endif
 
   ! Set up MARBL forcing control structure
-  call MARBL_forcing_init(G, US, param_file, diag, Time, CS%inputdir, CS%use_marbl_tracers, &
+  call MARBL_forcing_init(G, US, param_file, diag, Time, CS%inputdir, CS%use_MARBL_tracers, &
       CS%marbl_forcing_CSp)
 
   if (present(restore_salt)) then ; if (restore_salt) then

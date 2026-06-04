@@ -1,8 +1,10 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> Implements a crude placeholder for a later implementation of full
 !! ice shelf dynamics.
 module MOM_ice_shelf_dynamics
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock, only : CLOCK_COMPONENT, CLOCK_ROUTINE
@@ -1299,10 +1301,8 @@ subroutine write_ice_shelf_energy(CS, G, US, mass, area, day, time_step)
     elseif (reday < 1.0e11) then ; write(day_str, '(F15.3)') reday
     else ;                         write(day_str, '(ES15.9)') reday ; endif
 
-    if     (CS%prev_IS_energy_calls < 1000000)   then ; write(n_str, '(I6)') CS%prev_IS_energy_calls
-    elseif (CS%prev_IS_energy_calls < 10000000)  then ; write(n_str, '(I7)') CS%prev_IS_energy_calls
-    elseif (CS%prev_IS_energy_calls < 100000000) then ; write(n_str, '(I8)') CS%prev_IS_energy_calls
-    else                        ; write(n_str, '(I10)') CS%prev_IS_energy_calls ; endif
+    if (CS%prev_IS_energy_calls < 1000000) then ; write(n_str, '(I6)') CS%prev_IS_energy_calls
+    else ; write(n_str, '(I0)') CS%prev_IS_energy_calls ; endif
 
     write(CS%IS_fileenergy_ascii,'(A,",",A,", En ",ES22.16,", M ",ES11.5)') &
       trim(n_str), trim(day_str), US%L_T_to_m_s**2*KE_tot/mass_tot, US%RZL2_to_kg*mass_tot

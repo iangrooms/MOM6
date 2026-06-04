@@ -1,7 +1,9 @@
+! This file is part of MOM6, the Modular Ocean Model version 6.
+! See the LICENSE file for licensing information.
+! SPDX-License-Identifier: Apache-2.0
+
 !> This module implements boundary forcing for MOM6.
 module MOM_forcing_type
-
-! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_array_transform, only : rotate_array, rotate_vector, rotate_array_pair
 use MOM_coupler_types, only : coupler_2d_bc_type, coupler_type_destructor
@@ -234,7 +236,12 @@ type, public :: forcing
     atm_co2 => NULL(),               & !< Atmospheric CO2 Concentration [ppm]
     atm_alt_co2 => NULL(),           & !< Alternate atmospheric CO2 Concentration [ppm]
     dust_flux => NULL(),             & !< Flux of dust into the ocean [R Z T-1 ~> kgN m-2 s-1]
-    iron_flux => NULL()                !< Flux of dust into the ocean [conc Z T-1 ~> conc m s-1]
+    iron_flux => NULL(),             & !< Flux of dust into the ocean [conc Z T-1 ~> conc m s-1]
+    atm_fine_dust_flux => NULL(),    & !< Fine dust flux from atmosphere [R Z T-1 ~> kg m-2 s-1]
+    atm_coarse_dust_flux => NULL(),  & !< Coarse dust flux from atmosphere [R Z T-1 ~> kg m-2 s-1]
+    seaice_dust_flux => NULL(),      & !< Dust flux from seaice [R Z T-1 ~> kg m-2 s-1]
+    atm_bc_flux => NULL(),           & !< Black carbon flux from atmosphere [R Z T-1 ~> kg m-2 s-1]
+    seaice_bc_flux => NULL()           !< Black carbon flux from seaice [R Z T-1 ~> kg m-2 s-1]
 
   real, pointer, dimension(:,:,:) :: &
     fracr_cat   => NULL(),           & !< per-category ice fraction [nondim]
@@ -421,6 +428,11 @@ type, public :: forcing_diags ; private
   ! tracer surface flux related diagnostics handles
   integer :: id_ice_fraction = -1
   integer :: id_u10_sqr      = -1
+  integer :: id_atm_fine_dust_flux = -1
+  integer :: id_atm_coarse_dust_flux = -1
+  integer :: id_atm_bc_flux = -1
+  integer :: id_seaice_dust_flux = -1
+  integer :: id_seaice_bc_flux = -1
 
   ! iceberg diagnostic handles
   integer :: id_ustar_berg = -1
@@ -1183,7 +1195,7 @@ subroutine find_ustar_fluxes(fluxes, tv, U_star, G, GV, US, halo, H_T_units)
   ! Local variables
   real :: I_rho        ! The inverse of the reference density [R-1 ~> m3 kg-1]
                        ! or in some semi-Boussinesq cases the reference
-                       ! density [H2 R-1 ~> m3 kg-1 or kg m-3]
+                       ! density [H2 Z-2 R-1 ~> m3 kg-1 or kg m-3]
   logical :: Z_T_units ! If true, U_star is returned in units of [Z T-1 ~> m s-1], otherwise it is
                        ! returned in [H T-1 ~> m s-1 or kg m-2 s-1]
   integer :: i, j, k, is, ie, js, je, hs
@@ -1248,7 +1260,7 @@ subroutine find_ustar_mech_forcing(forces, tv, U_star, G, GV, US, halo, H_T_unit
 
   ! Local variables
   real :: I_rho        ! The inverse of the reference density [R-1 ~> m3 kg-1] or in some semi-Boussinesq cases
-                       ! the rescaled reference density [H2 R-1 ~> m3 kg-1 or kg m-3]
+                       ! the rescaled reference density [H2 Z-2 R-1 ~> m3 kg-1 or kg m-3]
   logical :: Z_T_units ! If true, U_star is returned in units of [Z T-1 ~> m s-1], otherwise it is
                        ! returned in [H T-1 ~> m s-1 or kg m-2 s-1]
   integer :: i, j, k, is, ie, js, je, hs
@@ -1540,7 +1552,7 @@ end subroutine forcing_SinglePointPrint
 
 !> Register members of the forcing type for diagnostics
 subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles, use_berg_fluxes, use_waves, &
-                                       use_cfcs, use_glc_runoff)
+                                       use_cfcs, use_MARBL_tracers, use_glc_runoff)
   type(time_type),     intent(in)    :: Time            !< time type
   type(diag_ctrl),     intent(inout) :: diag            !< diagnostic control type
   type(unit_scale_type), intent(in)  :: US              !< A dimensional unit scaling type
@@ -1549,7 +1561,17 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
   logical, optional,   intent(in)    :: use_berg_fluxes !< If true, allow iceberg flux diagnostics
   logical, optional,   intent(in)    :: use_waves       !< If true, allow wave forcing diagnostics
   logical, optional,   intent(in)    :: use_cfcs        !< If true, allow cfc related diagnostics
+  logical, optional,   intent(in)    :: use_MARBL_tracers  !< If true, allow MARBL related diagnostics
   logical, optional,   intent(in)    :: use_glc_runoff  !< If true, allow separate glacial runoff diagnostics
+
+  logical :: use_cfcs_or_MARBL_tracers
+
+  ! some diagnostics should be registered if either cfc or MARBL tracers are enabled
+  use_cfcs_or_MARBL_tracers = .false.
+  if (present(use_cfcs)) &
+    use_cfcs_or_MARBL_tracers = use_cfcs_or_MARBL_tracers .or. use_cfcs
+  if (present(use_MARBL_tracers)) &
+    use_cfcs_or_MARBL_tracers = use_cfcs_or_MARBL_tracers .or. use_MARBL_tracers
 
   ! Clock for forcing diagnostics
   handles%id_clock_forcing=cpu_clock_id('(Ocean forcing diagnostics)', grain=CLOCK_ROUTINE)
@@ -1578,7 +1600,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
       'm s-1', conversion=US%Z_to_m*US%s_to_T)
 
   handles%id_omega_w2x = register_diag_field('ocean_model', 'omega_w2x', diag%axesT1, Time, &
-      'Counter-clockwise angle of the wind stress from the horizontal axis.', 'rad')
+      'Counter-clockwise angle of the wind stress from the horizontal axis.', 'rad', conversion=1.0)
 
   if (present(use_berg_fluxes)) then
     if (use_berg_fluxes) then
@@ -1586,7 +1608,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
           'Friction velocity below iceberg ', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
 
       handles%id_area_berg = register_diag_field('ocean_model', 'area_berg', diag%axesT1, Time, &
-          'Area of grid cell covered by iceberg ', 'm2 m-2')
+          'Area of grid cell covered by iceberg ', 'm2 m-2', conversion=1.0)
 
       handles%id_mass_berg = register_diag_field('ocean_model', 'mass_berg', diag%axesT1, Time, &
           'Mass of icebergs ', 'kg m-2', conversion=US%RZ_to_kg_m2)
@@ -1595,21 +1617,38 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
           'Friction velocity below iceberg and ice shelf together', 'm s-1', conversion=US%Z_to_m*US%s_to_T)
 
       handles%id_frac_ice_cover = register_diag_field('ocean_model', 'frac_ice_cover', diag%axesT1, Time, &
-          'Area of grid cell below iceberg and ice shelf together ', 'm2 m-2')
+          'Area of grid cell below iceberg and ice shelf together ', 'm2 m-2', conversion=1.0)
     endif
   endif
 
-  ! See:
-  if (present(use_cfcs)) then
-    if (use_cfcs) then
-      handles%id_ice_fraction = register_diag_field('ocean_model', 'ice_fraction', diag%axesT1, Time, &
-          'Fraction of cell area covered by sea ice', 'm2 m-2')
+  if (use_cfcs_or_MARBL_tracers) then
+    handles%id_ice_fraction = register_diag_field('ocean_model', 'ice_fraction', diag%axesT1, Time, &
+        'Fraction of cell area covered by sea ice', 'm2 m-2', conversion=1.0)
 
-      handles%id_u10_sqr = register_diag_field('ocean_model', 'u10_sqr', diag%axesT1, Time, &
-          'Wind magnitude at 10m, squared', 'm2 s-2', conversion=US%L_to_m**2*US%s_to_T**2)
-    endif
+    handles%id_u10_sqr = register_diag_field('ocean_model', 'u10_sqr', diag%axesT1, Time, &
+        'Wind magnitude at 10m, squared', 'm2 s-2', conversion=US%L_to_m**2*US%s_to_T**2)
   endif
 
+  if (present(use_MARBL_tracers)) then
+    if (use_MARBL_tracers) then
+      handles%id_atm_fine_dust_flux = register_diag_field('ocean_model', 'ATM_FINE_DUST_FLUX_CPL', &
+          diag%axesT1, Time, 'ATM_FINE_DUST_FLUX from cpl', 'kg m-2 s', &
+          conversion=US%RZ_T_to_kg_m2s)
+      handles%id_atm_coarse_dust_flux = register_diag_field('ocean_model', 'ATM_COARSE_DUST_FLUX_CPL', &
+          diag%axesT1, Time, 'ATM_COARSE_DUST_FLUX from cpl', 'kg m-2 s', &
+          conversion=US%RZ_T_to_kg_m2s)
+      handles%id_atm_bc_flux = register_diag_field('ocean_model', 'ATM_BLACK_CARBON_FLUX_CPL', &
+          diag%axesT1, Time, 'ATM_BLACK_CARBON_FLUX from cpl',  'kg m-2 s', &
+          conversion=US%RZ_T_to_kg_m2s)
+
+      handles%id_seaice_dust_flux = register_diag_field('ocean_model', 'SEAICE_DUST_FLUX_CPL', &
+          diag%axesT1, Time, 'SEAICE_DUST_FLUX from cpl', 'kg m-2 s', &
+          conversion=US%RZ_T_to_kg_m2s)
+      handles%id_seaice_bc_flux = register_diag_field('ocean_model', 'SEAICE_BLACK_CARBON_FLUX_CPL', &
+          diag%axesT1, Time, 'SEAICE_BLACK_CARBON_FLUX from cpl', 'kg m-2 s', &
+          conversion=US%RZ_T_to_kg_m2s)
+    end if
+  end if
   handles%id_psurf = register_diag_field('ocean_model', 'p_surf', diag%axesT1, Time, &
         'Pressure at ice-ocean or atmosphere-ocean interface', &
         'Pa', conversion=US%RL2_T2_to_Pa, cmor_field_name='pso', &
@@ -1781,11 +1820,13 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
       cmor_long_name='Water Flux into Sea Water From Rivers Area Integrated')
 
   if (present(use_glc_runoff)) then
-    handles%id_total_frunoff_glc = register_scalar_field('ocean_model', 'total_frunoff_glc', Time, diag,    &
-        long_name='Area integrated frozen glacier runoff (calving) & iceberg melt into ocean', units='kg s-1')
+    handles%id_total_frunoff_glc = register_scalar_field('ocean_model', 'total_frunoff_glc', Time, diag, &
+        long_name='Area integrated frozen glacier runoff (calving) & iceberg melt into ocean', &
+        units='kg s-1', conversion=US%RZL2_to_kg*US%s_to_T)
 
-    handles%id_total_lrunoff_glc = register_scalar_field('ocean_model', 'total_lrunoff_glc', Time, diag,&
-        long_name='Area integrated liquid glacier runoff into ocean', units='kg s-1')
+    handles%id_total_lrunoff_glc = register_scalar_field('ocean_model', 'total_lrunoff_glc', Time, diag, &
+        long_name='Area integrated liquid glacier runoff into ocean', &
+        units='kg s-1', conversion=US%RZL2_to_kg*US%s_to_T)
   endif
 
   handles%id_total_net_massout = register_scalar_field('ocean_model', 'total_net_massout', Time, diag, &
@@ -2010,12 +2051,12 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
     handles%id_total_heat_content_frunoff_glc = register_scalar_field('ocean_model',                 &
         'total_heat_content_frunoff_glc', Time, diag,                                                &
         long_name='Area integrated heat content (relative to 0C) of solid glacier runoff',           &
-        units='W') ! todo: update cmor names
+        units='W', conversion=US%QRZ_T_to_W_m2*US%L_to_m**2) ! todo: update cmor names
 
     handles%id_total_heat_content_lrunoff_glc = register_scalar_field('ocean_model',               &
         'total_heat_content_lrunoff_glc', Time, diag,                                              &
         long_name='Area integrated heat content (relative to 0C) of liquid glacier runoff',        &
-        units='W') ! todo: update cmor names
+        units='W', conversion=US%QRZ_T_to_W_m2*US%L_to_m**2) ! todo: update cmor names
   endif
 
   handles%id_total_heat_content_lprec = register_scalar_field('ocean_model',                   &
@@ -2139,7 +2180,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
     handles%id_total_lat_frunoff_glc = register_scalar_field('ocean_model',                             &
         'total_lat_frunoff_glc', Time, diag,                                                            &
         long_name='Area integrated latent heat flux due to melting frozen glacier runoff',              &
-        units='W') ! todo: update cmor names
+        units='W', conversion=US%QRZ_T_to_W_m2*US%L_to_m**2) ! todo: update cmor names
   endif
 
   handles%id_total_sens = register_scalar_field('ocean_model',                 &
@@ -2259,17 +2300,17 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
   handles%id_saltFluxGlobalScl = register_scalar_field('ocean_model',            &
         'salt_flux_global_restoring_scaling', Time, diag,                        &
         'Scaling applied to balance net global salt flux into ocean at surface', &
-        'nondim')
+        'nondim', conversion=1.0)
 
   handles%id_vPrecGlobalScl = register_scalar_field('ocean_model',&
         'vprec_global_scaling', Time, diag,                       &
         'Scaling applied to adjust net vprec into ocean to zero', &
-        'nondim')
+        'nondim', conversion=1.0)
 
   handles%id_netFWGlobalScl = register_scalar_field('ocean_model',      &
         'net_fresh_water_global_scaling', Time, diag,                   &
         'Scaling applied to adjust net fresh water into ocean to zero', &
-        'nondim')
+        'nondim', conversion=1.0)
 
   !===============================================================
   ! area integrals of surface salt fluxes
@@ -2294,7 +2335,7 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
   if (present(use_waves)) then
     if (use_waves) then
       handles%id_lamult = register_diag_field('ocean_model', 'lamult', &
-        diag%axesT1, Time, long_name='Langmuir enhancement factor received from WW3', units="nondim")
+        diag%axesT1, Time, long_name='Langmuir enhancement factor received from WW3', units="nondim", conversion=1.0)
     endif
   endif
 
@@ -2336,7 +2377,7 @@ subroutine fluxes_accumulate(flux_tmp, fluxes, G, wt2, forces)
   ! applied based on the time interval stored in flux_tmp.
 
   real :: wt1  ! The relative weight of the previous fluxes [nondim]
-  integer :: i, j, is, ie, js, je, Isq, Ieq, Jsq, Jeq
+  integer :: i, j, is, ie, js, je, Isq, Ieq, Jsq, Jeq, n
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
   is   = G%isc   ; ie   = G%iec    ; js   = G%jsc   ; je   = G%jec
   Isq  = G%IscB  ; Ieq  = G%IecB   ; Jsq  = G%JscB  ; Jeq  = G%JecB
@@ -2494,6 +2535,84 @@ subroutine fluxes_accumulate(flux_tmp, fluxes, G, wt2, forces)
   if (associated(fluxes%frac_shelf_h) .and. associated(flux_tmp%frac_shelf_h)) then
     do i=isd,ied ; do j=jsd,jed
       fluxes%frac_shelf_h(i,j)  = flux_tmp%frac_shelf_h(i,j)
+    enddo ; enddo
+  endif
+
+  ! Forcings introduced for MARBL
+  ! NOTE: fluxes%salt_flux, %sw, and %p_surf_full are handled above
+  if (associated(fluxes%nhx_dep) .and. associated(flux_tmp%nhx_dep)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%nhx_dep(i,j)  = wt1*fluxes%nhx_dep(i,j) + wt2*flux_tmp%nhx_dep(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%noy_dep) .and. associated(flux_tmp%noy_dep)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%noy_dep(i,j)  = wt1*fluxes%noy_dep(i,j) + wt2*flux_tmp%noy_dep(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%atm_co2) .and. associated(flux_tmp%atm_co2)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%atm_co2(i,j)  = wt1*fluxes%atm_co2(i,j) + wt2*flux_tmp%atm_co2(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%atm_alt_co2) .and. associated(flux_tmp%atm_alt_co2)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%atm_alt_co2(i,j)  = wt1*fluxes%atm_alt_co2(i,j) + wt2*flux_tmp%atm_alt_co2(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%dust_flux) .and. associated(flux_tmp%dust_flux)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%dust_flux(i,j)  = wt1*fluxes%dust_flux(i,j) + wt2*flux_tmp%dust_flux(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%iron_flux) .and. associated(flux_tmp%iron_flux)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%iron_flux(i,j)  = wt1*fluxes%iron_flux(i,j) + wt2*flux_tmp%iron_flux(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%atm_fine_dust_flux) .and. associated(flux_tmp%atm_fine_dust_flux)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%atm_fine_dust_flux(i,j)  = wt1*fluxes%atm_fine_dust_flux(i,j) + wt2*flux_tmp%atm_fine_dust_flux(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%atm_coarse_dust_flux) .and. associated(flux_tmp%atm_coarse_dust_flux)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%atm_coarse_dust_flux(i,j)  = wt1*fluxes%atm_coarse_dust_flux(i,j) + wt2*flux_tmp%atm_coarse_dust_flux(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%atm_bc_flux) .and. associated(flux_tmp%atm_bc_flux)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%atm_bc_flux(i,j)  = wt1*fluxes%atm_bc_flux(i,j) + wt2*flux_tmp%atm_bc_flux(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%seaice_dust_flux) .and. associated(flux_tmp%seaice_dust_flux)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%seaice_dust_flux(i,j)  = wt1*fluxes%seaice_dust_flux(i,j) + wt2*flux_tmp%seaice_dust_flux(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%seaice_bc_flux) .and. associated(flux_tmp%seaice_bc_flux)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%seaice_bc_flux(i,j)  = wt1*fluxes%seaice_bc_flux(i,j) + wt2*flux_tmp%seaice_bc_flux(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%fracr_cat) .and. associated(flux_tmp%fracr_cat)) then
+    do n=1,size(fluxes%fracr_cat,dim=3) ; do j=jsd,jed ; do i=isd,ied
+      fluxes%fracr_cat(i,j,n)  = wt1*fluxes%fracr_cat(i,j,n) + wt2*flux_tmp%fracr_cat(i,j,n)
+    enddo ; enddo ; enddo
+  endif
+  if (associated(fluxes%qsw_cat) .and. associated(flux_tmp%qsw_cat)) then
+    do n=1,size(fluxes%qsw_cat,dim=3) ; do j=jsd,jed ; do i=isd,ied
+      fluxes%qsw_cat(i,j,n)  = wt1*fluxes%qsw_cat(i,j,n) + wt2*flux_tmp%qsw_cat(i,j,n)
+    enddo ; enddo ; enddo
+  endif
+  if (associated(fluxes%ice_fraction) .and. associated(flux_tmp%ice_fraction)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%ice_fraction(i,j)  = wt1*fluxes%ice_fraction(i,j) + wt2*flux_tmp%ice_fraction(i,j)
+    enddo ; enddo
+  endif
+  if (associated(fluxes%u10_sqr) .and. associated(flux_tmp%u10_sqr)) then
+    do j=jsd,jed ; do i=isd,ied
+      fluxes%u10_sqr(i,j)  = wt1*fluxes%u10_sqr(i,j) + wt2*flux_tmp%u10_sqr(i,j)
     enddo ; enddo
   endif
 
@@ -2960,7 +3079,7 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
     if (associated(fluxes%lrunoff_glc)) then
     if (handles%id_lrunoff_glc > 0) call post_data(handles%id_lrunoff_glc, fluxes%lrunoff_glc, diag)
       if (handles%id_total_lrunoff_glc > 0) then
-        total_mass_flux = global_area_integral(fluxes%lrunoff_glc, G, scale=US%RZ_T_to_kg_m2s)
+        total_mass_flux = global_area_integral(fluxes%lrunoff_glc, G, tmp_scale=US%RZ_T_to_kg_m2s)
         call post_data(handles%id_total_lrunoff_glc, total_mass_flux, diag)
       endif
     endif
@@ -2976,7 +3095,7 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
     if (associated(fluxes%frunoff_glc)) then
       if (handles%id_frunoff_glc > 0) call post_data(handles%id_frunoff_glc, fluxes%frunoff_glc, diag)
       if (handles%id_total_frunoff_glc > 0) then
-        total_mass_flux = global_area_integral(fluxes%frunoff_glc, G, scale=US%RZ_T_to_kg_m2s)
+        total_mass_flux = global_area_integral(fluxes%frunoff_glc, G, tmp_scale=US%RZ_T_to_kg_m2s)
         call post_data(handles%id_total_frunoff_glc, total_mass_flux, diag)
       endif
     endif
@@ -3002,8 +3121,8 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
     if ((handles%id_heat_content_lrunoff_glc > 0) .and. associated(fluxes%heat_content_lrunoff_glc))  &
       call post_data(handles%id_heat_content_lrunoff_glc, fluxes%heat_content_lrunoff_glc, diag)
     if ((handles%id_total_heat_content_lrunoff_glc > 0) .and. associated(fluxes%heat_content_lrunoff_glc)) then
-      total_mass_flux = global_area_integral(fluxes%heat_content_lrunoff_glc, G, scale=US%QRZ_T_to_W_m2)
-      call post_data(handles%id_total_heat_content_lrunoff_glc, total_mass_flux, diag)
+      total_heat_flux = global_area_integral(fluxes%heat_content_lrunoff_glc, G, tmp_scale=US%QRZ_T_to_W_m2)
+      call post_data(handles%id_total_heat_content_lrunoff_glc, total_heat_flux, diag)
     endif
 
     if ((handles%id_heat_content_frunoff > 0) .and. associated(fluxes%heat_content_frunoff))  &
@@ -3015,8 +3134,8 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
     if ((handles%id_heat_content_frunoff_glc > 0) .and. associated(fluxes%heat_content_frunoff_glc))  &
       call post_data(handles%id_heat_content_frunoff_glc, fluxes%heat_content_frunoff_glc, diag)
     if ((handles%id_total_heat_content_frunoff_glc > 0) .and. associated(fluxes%heat_content_frunoff_glc)) then
-      total_mass_flux = global_area_integral(fluxes%heat_content_frunoff_glc, G, scale=US%QRZ_T_to_W_m2)
-      call post_data(handles%id_total_heat_content_frunoff_glc, total_mass_flux, diag)
+      total_heat_flux = global_area_integral(fluxes%heat_content_frunoff_glc, G, tmp_scale=US%QRZ_T_to_W_m2)
+      call post_data(handles%id_total_heat_content_frunoff_glc, total_heat_flux, diag)
     endif
 
     if ((handles%id_heat_content_lprec > 0) .and. associated(fluxes%heat_content_lprec))      &
@@ -3281,8 +3400,8 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
       call post_data(handles%id_lat_frunoff_glc, fluxes%latent_frunoff_glc_diag, diag)
     endif
     if (handles%id_total_lat_frunoff_glc > 0 .and. associated(fluxes%latent_frunoff_glc_diag)) then
-      total_mass_flux = global_area_integral(fluxes%latent_frunoff_glc_diag, G, scale=US%QRZ_T_to_W_m2)
-      call post_data(handles%id_total_lat_frunoff_glc, total_mass_flux, diag)
+      total_heat_flux = global_area_integral(fluxes%latent_frunoff_glc_diag, G, tmp_scale=US%QRZ_T_to_W_m2)
+      call post_data(handles%id_total_lat_frunoff_glc, total_heat_flux, diag)
     endif
 
     if ((handles%id_sens > 0) .and. associated(fluxes%sens)) then
@@ -3363,6 +3482,21 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
 
     if ((handles%id_u10_sqr > 0) .and. associated(fluxes%u10_sqr)) &
       call post_data(handles%id_u10_sqr, fluxes%u10_sqr, diag)
+
+    if ((handles%id_atm_fine_dust_flux > 0) .and. associated(fluxes%atm_fine_dust_flux)) &
+      call post_data(handles%id_atm_fine_dust_flux, fluxes%atm_fine_dust_flux, diag)
+
+    if ((handles%id_atm_coarse_dust_flux > 0) .and. associated(fluxes%atm_coarse_dust_flux)) &
+      call post_data(handles%id_atm_coarse_dust_flux, fluxes%atm_coarse_dust_flux, diag)
+
+    if ((handles%id_atm_bc_flux > 0) .and. associated(fluxes%atm_bc_flux)) &
+      call post_data(handles%id_atm_bc_flux, fluxes%atm_bc_flux, diag)
+
+    if ((handles%id_seaice_dust_flux > 0) .and. associated(fluxes%seaice_dust_flux)) &
+      call post_data(handles%id_seaice_dust_flux, fluxes%seaice_dust_flux, diag)
+
+    if ((handles%id_seaice_bc_flux > 0) .and. associated(fluxes%seaice_bc_flux)) &
+      call post_data(handles%id_seaice_bc_flux, fluxes%seaice_bc_flux, diag)
 
     ! remaining boundary terms ==================================================
 
@@ -3524,7 +3658,7 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
 
   if (present(fix_accum_bug)) fluxes%gustless_accum_bug = .not.fix_accum_bug
 
-  !These fields should only be allocated when USE_MARBL is activated.
+  !These fields should only be allocated when USE_MARBL_TRACERS is activated.
   call myAlloc(fluxes%ice_fraction,isd,ied,jsd,jed, marbl)
   call myAlloc(fluxes%u10_sqr,isd,ied,jsd,jed, marbl)
   call myAlloc(fluxes%noy_dep,isd,ied,jsd,jed, marbl)
@@ -3533,6 +3667,11 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   call myAlloc(fluxes%atm_alt_co2,isd,ied,jsd,jed, marbl)
   call myAlloc(fluxes%dust_flux,isd,ied,jsd,jed, marbl)
   call myAlloc(fluxes%iron_flux,isd,ied,jsd,jed, marbl)
+  call myAlloc(fluxes%atm_fine_dust_flux,isd,ied,jsd,jed, marbl)
+  call myAlloc(fluxes%atm_coarse_dust_flux,isd,ied,jsd,jed, marbl)
+  call myAlloc(fluxes%atm_bc_flux,isd,ied,jsd,jed, marbl)
+  call myAlloc(fluxes%seaice_dust_flux,isd,ied,jsd,jed, marbl)
+  call myAlloc(fluxes%seaice_bc_flux,isd,ied,jsd,jed, marbl)
 
   ! These fields should only be allocated when receiving multiple ice categories
   if (present(ice_ncat)) then
@@ -3839,6 +3978,11 @@ subroutine deallocate_forcing_type(fluxes)
   if (associated(fluxes%atm_alt_co2))          deallocate(fluxes%atm_alt_co2)
   if (associated(fluxes%dust_flux))            deallocate(fluxes%dust_flux)
   if (associated(fluxes%iron_flux))            deallocate(fluxes%iron_flux)
+  if (associated(fluxes%atm_fine_dust_flux))   deallocate(fluxes%atm_fine_dust_flux)
+  if (associated(fluxes%atm_coarse_dust_flux)) deallocate(fluxes%atm_coarse_dust_flux)
+  if (associated(fluxes%atm_bc_flux))          deallocate(fluxes%atm_bc_flux)
+  if (associated(fluxes%seaice_dust_flux))     deallocate(fluxes%seaice_dust_flux)
+  if (associated(fluxes%seaice_bc_flux))       deallocate(fluxes%seaice_bc_flux)
   if (associated(fluxes%fracr_cat))            deallocate(fluxes%fracr_cat)
   if (associated(fluxes%qsw_cat))              deallocate(fluxes%qsw_cat)
 
