@@ -1504,7 +1504,7 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
   if (IDs%id_ssv > 0) &
     call post_data(IDs%id_ssv, sfc_state%v, diag, mask=G%mask2dCv)
 
-  if ((IDs%id_ssv_deconv > 0) .and. (allocated(sfc_state%v_deconv)) &
+  if ((IDs%id_ssv_deconv > 0) .and. allocated(sfc_state%v_deconv)) &
     call post_data(IDs%id_ssv_deconv, sfc_state%v_deconv, diag, mask=G%mask2dCv)
 
   if (IDs%id_speed > 0) then
@@ -1516,7 +1516,7 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
   endif
 
   if (IDs%id_speed_deconv > 0) then
-    if ((allocated(sfc_state%u_deconv) .and. (allocated(sfc_state%v_deconv)) then
+    if (allocated(sfc_state%u_deconv) .and. allocated(sfc_state%v_deconv)) then
       do j=js,je ; do i=is,ie
         speed(i,j) = sqrt(0.5*((sfc_state%u_deconv(I-1,j)**2 + sfc_state%u_deconv(I,j)**2) + &
                                (sfc_state%v_deconv(i,J-1)**2 + sfc_state%v_deconv(i,J)**2)))
@@ -1637,7 +1637,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
   if (tv%T_is_conT) then
     ! Internal T&S variables are conservative temperature & absolute salinity
     if (IDs%id_sstcon > 0) call post_data(IDs%id_sstcon, sfc_state%SST, diag, mask=G%mask2dT)
-    if ((IDs%id_sstcon_deconv > 0) .and. (allocated(sfc_state%SST_deconv)) &
+    if ((IDs%id_sstcon_deconv > 0) .and. allocated(sfc_state%SST_deconv)) &
       call post_data(IDs%id_sstcon_deconv, sfc_state%SST_deconv, diag, mask=G%mask2dT)
     ! Use TEOS-10 function calls convert T&S diagnostics from conservative temp
     ! to potential temperature.
@@ -1649,7 +1649,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
       call post_data(IDs%id_sst, work_2d, diag, mask=G%mask2dT)
     endif
     if (IDs%id_sst_deconv > 0) then
-      if ((allocated(sfc_state%SSS_deconv) .and. (allocated(sfc_state%SST_deconv))) then
+      if (allocated(sfc_state%SSS_deconv) .and. allocated(sfc_state%SST_deconv)) then
         do j=js,je
           call cons_temp_to_pot_temp(sfc_state%SST_deconv(:,j), sfc_state%SSS_deconv(:,j), &
                                      work_2d(:,j), tv%eqn_of_state, EOSdom)
@@ -1660,14 +1660,14 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
   else
     ! Internal T&S variables are potential temperature & practical salinity
     if (IDs%id_sst > 0) call post_data(IDs%id_sst, sfc_state%SST, diag, mask=G%mask2dT)
-    if ((IDs%id_sst_deconv > 0)  .and. (allocated(sfc_state%SST_deconv)) &
+    if ((IDs%id_sst_deconv > 0)  .and. allocated(sfc_state%SST_deconv)) &
       call post_data(IDs%id_sst_deconv, sfc_state%SST_deconv, diag, mask=G%mask2dT)
   endif
 
   if (tv%S_is_absS) then
     ! Internal T&S variables are conservative temperature & absolute salinity
     if (IDs%id_sssabs > 0) call post_data(IDs%id_sssabs, sfc_state%SSS, diag, mask=G%mask2dT)
-    if ((IDs%id_sssabs_deconv > 0)  .and. (allocated(sfc_state%SSS_deconv)) &
+    if ((IDs%id_sssabs_deconv > 0)  .and. allocated(sfc_state%SSS_deconv)) &
       call post_data(IDs%id_sssabs_deconv, sfc_state%SSS_deconv, diag, mask=G%mask2dT)
     ! Use TEOS-10 function calls convert T&S diagnostics from absolute salinity
     ! to practical salinity.
@@ -1678,7 +1678,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
       enddo
       call post_data(IDs%id_sss, work_2d, diag, mask=G%mask2dT)
     endif
-    if ((IDs%id_sss_deconv > 0) .and. (allocated(sfc_state%SSS_deconv)) then
+    if ((IDs%id_sss_deconv > 0) .and. allocated(sfc_state%SSS_deconv)) then
       do j=js,je
         call abs_saln_to_prac_saln(sfc_state%SSS_deconv(:,j), work_2d(:,j), tv%eqn_of_state, EOSdom)
       enddo
@@ -1687,7 +1687,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
   else
     ! Internal T&S variables are potential temperature & practical salinity
     if (IDs%id_sss > 0) call post_data(IDs%id_sss, sfc_state%SSS, diag, mask=G%mask2dT)
-    if ((IDs%id_sss_deconv > 0) .and. (allocated(sfc_state%SSS_deconv)) &
+    if ((IDs%id_sss_deconv > 0) .and. allocated(sfc_state%SSS_deconv)) &
       call post_data(IDs%id_sss_deconv, sfc_state%SSS_deconv, diag, mask=G%mask2dT)
   endif
 
@@ -1697,7 +1697,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     enddo ; enddo
     call post_data(IDs%id_sst_sq, work_2d, diag, mask=G%mask2dT)
   endif
-  if ((IDs%id_sst_deconv_sq > 0) .and. (allocated(sfc_state%SST_deconv)) then
+  if ((IDs%id_sst_deconv_sq > 0) .and. allocated(sfc_state%SST_deconv)) then
     do j=js,je ; do i=is,ie
       work_2d(i,j) = sfc_state%SST_deconv(i,j)*sfc_state%SST_deconv(i,j)
     enddo ; enddo
@@ -1709,7 +1709,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     enddo ; enddo
     call post_data(IDs%id_sss_sq, work_2d, diag, mask=G%mask2dT)
   endif
-  if ((IDs%id_sss_deconv_sq > 0) .and. (allocated(sfc_state%SSS_deconv)) then
+  if ((IDs%id_sss_deconv_sq > 0) .and. allocated(sfc_state%SSS_deconv)) then
     do j=js,je ; do i=is,ie
       work_2d(i,j) = sfc_state%SSS_deconv(i,j)*sfc_state%SSS_deconv(i,j)
     enddo ; enddo
