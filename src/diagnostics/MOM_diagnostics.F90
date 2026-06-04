@@ -2233,11 +2233,11 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
       standard_name='area_averaged_sea_surface_height')
   IDs%id_ssu = register_diag_field('ocean_model', 'SSU', diag%axesCu1, Time, &
       'Sea Surface Zonal Velocity', 'm s-1', conversion=US%L_T_to_m_s)
-  IDs%id_ssu_deconv = register_diag_field('ocean_model', 'SSU_DECONV', diag%axesCu1, Time, &
+  IDs%id_ssu_deconv = register_diag_field('ocean_model', 'SSU_deconv', diag%axesCu1, Time, &
       'Sea Surface Zonal Velocity, Deconvolved', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_ssv = register_diag_field('ocean_model', 'SSV', diag%axesCv1, Time, &
       'Sea Surface Meridional Velocity', 'm s-1', conversion=US%L_T_to_m_s)
-  IDs%id_ssv_deconv = register_diag_field('ocean_model', 'SSV_DECONV', diag%axesCv1, Time, &
+  IDs%id_ssv_deconv = register_diag_field('ocean_model', 'SSV_deconv', diag%axesCv1, Time, &
       'Sea Surface Meridional Velocity, Deconvolved', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_speed = register_diag_field('ocean_model', 'speed', diag%axesT1, Time, &
       'Sea Surface Speed', 'm s-1', conversion=US%L_T_to_m_s)
@@ -2253,36 +2253,36 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
         'Sea Surface Temperature', 'degC', conversion=US%C_to_degC, &
         cmor_field_name='tos', cmor_long_name='Sea Surface Temperature', &
         cmor_standard_name='sea_surface_temperature')
-    IDs%id_sst_deconv = register_diag_field('ocean_model', 'SST_DECONV', diag%axesT1, Time, &
+    IDs%id_sst_deconv = register_diag_field('ocean_model', 'SST_deconv', diag%axesT1, Time, &
         'Sea Surface Temperature, Deconvolved', 'degC', conversion=US%C_to_degC)
     IDs%id_sst_sq = register_diag_field('ocean_model', 'SST_sq', diag%axesT1, Time, &
         'Sea Surface Temperature Squared', 'degC2', conversion=US%C_to_degC**2, &
         cmor_field_name='tossq', cmor_long_name='Square of Sea Surface Temperature ', &
         cmor_standard_name='square_of_sea_surface_temperature')
-    IDs%id_sst_deconv_sq = register_diag_field('ocean_model', 'SST_DECONV_sq', diag%axesT1, Time, &
+    IDs%id_sst_deconv_sq = register_diag_field('ocean_model', 'SST_deconv_sq', diag%axesT1, Time, &
         'Sea Surface Temperature, Deconvolved, Squared', 'degC2', conversion=US%C_to_degC**2)
     IDs%id_sss = register_diag_field('ocean_model', 'SSS', diag%axesT1, Time, &
         'Sea Surface Salinity', 'psu', conversion=US%S_to_ppt, &
         cmor_field_name='sos', cmor_long_name='Sea Surface Salinity', &
         cmor_standard_name='sea_surface_salinity')
-    IDs%id_sss_deconv = register_diag_field('ocean_model', 'SSS_DECONV', diag%axesT1, Time, &
+    IDs%id_sss_deconv = register_diag_field('ocean_model', 'SSS_deconv', diag%axesT1, Time, &
         'Sea Surface Salinity, Deconvolved', 'psu', conversion=US%S_to_ppt)
     IDs%id_sss_sq = register_diag_field('ocean_model', 'SSS_sq', diag%axesT1, Time, &
         'Sea Surface Salinity Squared', 'psu2', conversion=US%S_to_ppt**2, &
         cmor_field_name='sossq', cmor_long_name='Square of Sea Surface Salinity ', &
         cmor_standard_name='square_of_sea_surface_salinity')
-    IDs%id_sss_deconv_sq = register_diag_field('ocean_model', 'SSS_DECONV_sq', diag%axesT1, Time, &
+    IDs%id_sss_deconv_sq = register_diag_field('ocean_model', 'SSS_deconv_sq', diag%axesT1, Time, &
         'Sea Surface Salinity, Deconvolved, Squared', 'psu2', conversion=US%S_to_ppt**2)
     if (tv%T_is_conT) then
       IDs%id_sstcon = register_diag_field('ocean_model', 'conSST', diag%axesT1, Time, &
           'Sea Surface Conservative Temperature', 'Celsius', conversion=US%C_to_degC)
-      IDs%id_sstcon_deconv = register_diag_field('ocean_model', 'conSST_DECONV', diag%axesT1, Time,&
+      IDs%id_sstcon_deconv = register_diag_field('ocean_model', 'conSST_deconv', diag%axesT1, Time,&
           'Sea Surface Conservative Temperature, Deconvolved', 'Celsius', conversion=US%C_to_degC)
     endif
     if (tv%S_is_absS) then
       IDs%id_sssabs = register_diag_field('ocean_model', 'absSSS', diag%axesT1, Time, &
           'Sea Surface Absolute Salinity', 'g kg-1', conversion=US%S_to_ppt)
-      IDs%id_sssabs_deconv = register_diag_field('ocean_model', 'absSSS_DECONV', diag%axesT1, Time, &
+      IDs%id_sssabs_deconv = register_diag_field('ocean_model', 'absSSS_deconv', diag%axesT1, Time, &
           'Sea Surface Absolute Salinity, Deconvolved', 'g kg-1', conversion=US%S_to_ppt)
     endif
     if (associated(tv%frazil)) then
