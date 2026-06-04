@@ -401,13 +401,8 @@ subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
                                               !! is present, it is used and tr_fields_in is ignored.
   integer,     optional, intent(in)    :: turns  !< If present, the number of counterclockwise quarter
                                                  !! turns to use on the new grid.
-<<<<<<< HEAD
-  logical,     optional, intent(in)    :: use_marbl_tracers  !< If true, allocate the space for CO2 flux from MARBL
-  logical,     optional, intent(in)    :: sfc_deconv  !< If true, allocate space for deconvolved surface
-                                                      !! fields u, v, S, T.
-=======
   logical,     optional, intent(in)    :: use_MARBL_tracers  !< If true, allocate the space for CO2 flux from MARBL
->>>>>>> dev/ncar
+  logical,     optional, intent(in)    :: sfc_deconv  !< If true, allocate space for deconvolved surface
 
   ! local variables
   logical :: use_temp, alloc_integ, use_melt_potential, alloc_iceshelves, alloc_frazil, alloc_fco2
@@ -426,12 +421,8 @@ subroutine allocate_surface_state(sfc_state, G, use_temperature, do_integrals, &
   use_melt_potential = .false. ; if (present(use_meltpot)) use_melt_potential = use_meltpot
   alloc_iceshelves = .false. ; if (present(use_iceshelves)) alloc_iceshelves = use_iceshelves
   alloc_frazil = .true. ; if (present(omit_frazil)) alloc_frazil = .not.omit_frazil
-<<<<<<< HEAD
-  alloc_fco2 = .false. ; if (present(use_marbl_tracers)) alloc_fco2 = use_marbl_tracers
-  alloc_sfc_deconv = .false. ; if (present(sfc_deconv)) alloc_sfc_deconv = sfc_deconv
-=======
   alloc_fco2 = .false. ; if (present(use_MARBL_tracers)) alloc_fco2 = use_MARBL_tracers
->>>>>>> dev/ncar
+  alloc_sfc_deconv = .false. ; if (present(sfc_deconv)) alloc_sfc_deconv = sfc_deconv
 
   if (sfc_state%arrays_allocated) return
 
