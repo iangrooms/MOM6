@@ -262,7 +262,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
                       !! min(HFrz, OBLD), where OBLD is the boundary layer depth.
                       !! If HFrz <= 0 (default), melt potential will not be computed.
   logical :: use_melt_pot !< If true, allocate melt_potential array
-
+  logical :: compute_sfc_deconv !< If true, allocate fields for surface deconvolution
 
 ! This include declares and sets the variable "version".
 #include "version_variable.h"
@@ -401,16 +401,20 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
        "If true, enables surface wave modules.", default=.false.)
   call get_param(param_file, mdl, "USE_MARBL_TRACERS", OS%use_MARBL, &
                  default=.false., do_not_log=.true.)
+  call get_param(param_file, "MOM", "COMPUTE_SFC_DECONV", compute_sfc_deconv, &
+                 "If true, compute deconvolved surface fields: temperature, "//&
+                 "salinity, and lateral velocity components",&
+                 default=.false., do_not_log=.true.)
 
   !   Consider using a run-time flag to determine whether to do the diagnostic
   ! vertical integrals, since the related 3-d sums are not negligible in cost.
   call allocate_surface_state(OS%sfc_state, OS%grid, use_temperature, &
                               do_integrals=.true., gas_fields_ocn=gas_fields_ocn, &
                               use_meltpot=use_melt_pot, use_marbl_tracers=OS%use_MARBL, &
-                              sfc_deconv=OS%compute_sfc_deconv)
+                              sfc_deconv=compute_sfc_deconv)
   call get_param(param_file, mdl, "USE_SFC_DECONV", OS%sfc_state%use_sfc_deconv, &
        "If true, uses deconvolved surface fields to compute air-sea fluxes.", default=.false.)
-  if (OS%sfc_state%use_sfc_deconv .and. .not.OS%compute_sfc_deconv) then
+  if (OS%sfc_state%use_sfc_deconv .and. .not.compute_sfc_deconv) then
     call MOM_error(FATAL, "ocean_model_init:"//&
                           "USE_SFC_DECONV=True requires COMPUTE_SFC_DECONV=True.")
   endif
@@ -971,7 +975,7 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
   endif
   if (sfc_state%S_is_absS) then
     ! Convert the surface S from absolute salinity to practical salinity.
-    if (.not. sfc_state%use_sfc_deconv) then`
+    if (.not. sfc_state%use_sfc_deconv) then
       do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
         Ocean_sfc%s_surf(i,j) = gsw_sp_from_sr(US%S_to_ppt*sfc_state%SSS(i+i0,j+j0))
       enddo ; enddo
@@ -1053,7 +1057,6 @@ subroutine convert_state_to_ocean_type(sfc_state, Ocean_sfc, G, US, patm, press_
                   0.5*(sfc_state%v(i+i0,J+j0)+sfc_state%v(i+i0+1,J+j0))
       enddo ; enddo
     else
-    if (.not. sfc_state%use_sfc_deconv) then
       do j=jsc_bnd,jec_bnd ; do i=isc_bnd,iec_bnd
         Ocean_sfc%u_surf(i,j) = G%mask2dBu(I+i0,J+j0) * US%L_T_to_m_s * &
                   0.5*(sfc_state%u_deconv(I+i0,j+j0)+sfc_state%u_deconv(I+i0,j+j0+1))
