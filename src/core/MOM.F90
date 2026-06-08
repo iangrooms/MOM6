@@ -285,6 +285,9 @@ type, public :: MOM_control_struct ; private
   logical :: MEKE_in_dynamics !< If .true. (default), MEKE is called in the dynamics routine otherwise
                               !! it is called during the tracer dynamics
   logical :: compute_sfc_deconv = .false. !< If true, compute deconvolved surface fields.
+  logical :: compute_sst_deconv = .false. !< Used to control whether to deconvolve SST.
+  logical :: compute_sss_deconv = .false. !< Used to control whether to deconvolve SSS.
+  logical :: compute_ssu_deconv = .false. !< Used to control whether to deconvolve surface velocity.
   real    :: sfc_deconv_factor  = 0.0     !< Factor to use in surface deconvolution. [nondim]
 
   type(time_type), pointer :: Time   !< pointer to the ocean clock
@@ -2826,12 +2829,18 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  default=.false.)
   call get_param(param_file, "MOM", "COMPUTE_SFC_DECONV", CS%compute_sfc_deconv, &
                  "If true, compute deconvolved surface fields: temperature, "//&
-                 "salinity, and lateral velocity components",&
-                 default=.false.)
+                 "salinity, and lateral velocity components. To selectively exempt "//&
+                 "fields set COMPUTE_SS{S,T,U}_DECONV=False.", default=.false.)
   if (CS%compute_sfc_deconv) then
     call get_param(param_file, "MOM", "SFC_DECONV_FACTOR", CS%sfc_deconv_factor, &
                    "Factor c to use in surface field deconvolution operator "//&
                    "I - c * dx^2 * Laplacian.", default=0.1666667, units="nondim")
+    call get_param(param_file, "MOM", "COMPUTE_SST_DECONV", CS%compute_sst_deconv, &
+                   "If true, compute deconvolved SST.",default=.true.)
+    call get_param(param_file, "MOM", "COMPUTE_SSS_DECONV", CS%compute_sss_deconv, &
+                   "If true, compute deconvolved SSS.",default=.true.)
+    call get_param(param_file, "MOM", "COMPUTE_SSU_DECONV", CS%compute_ssu_deconv, &
+                   "If true, compute deconvolved surface velocity.",default=.true.)
   endif
 
   ! Check for inconsistent parameter settings.
@@ -4301,46 +4310,75 @@ subroutine extract_surface_state(CS, sfc_state_in)
     endif
   endif  ! (CS%Hmix >= 0.0)
 
-  if (allocated(sfc_state%SSS_deconv)) then
+  if (CS%compute_sfc_deconv) then
     sfc_deconv_const = 1.0 + 4.0 * CS%sfc_deconv_factor
-    ! Updating the halos just in case, because Laplacian will access halo values
-    call pass_var(sfc_state%SSS, G%domain)
-    call pass_var(sfc_state%SST, G%domain)
-    call pass_vector(sfc_state%u, sfc_state%v, G%domain)
-    do j=js,je ; do i=is,ie
-      if (G%near_land_T(i,j) /= 0.0) then
-        sfc_state%SSS_deconv(i,j) = sfc_deconv_const * sfc_state%SSS(i,j) &
+    if (CS%compute_sss_deconv) then
+      ! Updating the halos just in case, because Laplacian will access halo values
+      call pass_var(sfc_state%SSS, G%domain)
+      do j=js,je ; do i=is,ie
+        if (G%near_land_T(i,j) /= 0.0) then
+          sfc_state%SSS_deconv(i,j) = sfc_deconv_const * sfc_state%SSS(i,j) &
                           - CS%sfc_deconv_factor * ( (sfc_state%SSS(i-1,j) + sfc_state%SSS(i,j-1)) &
                                                    + (sfc_state%SSS(i+1,j) + sfc_state%SSS(i,j+1)) )
-        sfc_state%SST_deconv(i,j) = sfc_deconv_const * sfc_state%SST(i,j) &
+        else
+          sfc_state%SSS_deconv(i,j) = sfc_state%SSS(i,j)
+          sfc_state%SST_deconv(i,j) = sfc_state%SST(i,j)
+        endif
+      enddo ; enddo
+      call pass_var(sfc_state%SSS_deconv, G%domain)
+    else
+      do j=js,je ; do i=is,ie
+        sfc_state%SSS_deconv(i,j) = sfc_state%SSS(i,j)
+      enddo ; enddo
+    endif
+    if (CS%compute_sst_deconv) then
+      ! Updating the halos just in case, because Laplacian will access halo values
+      call pass_var(sfc_state%SST, G%domain)
+      do j=js,je ; do i=is,ie
+        if (G%near_land_T(i,j) /= 0.0) then
+          sfc_state%SST_deconv(i,j) = sfc_deconv_const * sfc_state%SST(i,j) &
                           - CS%sfc_deconv_factor * ( (sfc_state%SST(i-1,j) + sfc_state%SST(i,j-1)) &
                                                    + (sfc_state%SST(i+1,j) + sfc_state%SST(i,j+1)) )
-      else
-        sfc_state%SSS_deconv(i,j) = sfc_state%SSS(i,j)
+        else
+          sfc_state%SST_deconv(i,j) = sfc_state%SST(i,j)
+        endif
+      enddo ; enddo
+      call pass_var(sfc_state%SST_deconv, G%domain)
+    else
+      do j=js,je ; do i=is,ie
         sfc_state%SST_deconv(i,j) = sfc_state%SST(i,j)
-      endif
-    enddo ; enddo
-    call pass_var(sfc_state%SSS_deconv, G%domain)
-    call pass_var(sfc_state%SST_deconv, G%domain)
-    do j=js,je ; do I=IscB,IecB
-      if (G%near_land_u(I,j) /= 0.0) then
-        sfc_state%u_deconv(I,j) = sfc_deconv_const * sfc_state%u(I,j) &
+      enddo ; enddo
+    endif
+    if (CS%compute_ssu_deconv) then
+      ! Updating the halos just in case, because Laplacian will access halo values
+      call pass_vector(sfc_state%u, sfc_state%v, G%domain)
+      do j=js,je ; do I=IscB,IecB
+        if (G%near_land_u(I,j) /= 0.0) then
+          sfc_state%u_deconv(I,j) = sfc_deconv_const * sfc_state%u(I,j) &
                               - CS%sfc_deconv_factor * ( (sfc_state%u(I-1,j) + sfc_state%u(I,j-1)) &
                                                        + (sfc_state%u(I+1,j) + sfc_state%u(I,j+1)) )
-      else
-        sfc_state%u_deconv(I,j) = sfc_state%u(I,j)
-      endif
-    enddo ; enddo
-    do J=JscB,JecB ; do i=is,ie
-      if (G%near_land_v(i,J) /= 0.0) then
-        sfc_state%v_deconv(I,j) = sfc_deconv_const * sfc_state%v(I,j) &
+        else
+          sfc_state%u_deconv(I,j) = sfc_state%u(I,j)
+        endif
+      enddo ; enddo
+      do J=JscB,JecB ; do i=is,ie
+        if (G%near_land_v(i,J) /= 0.0) then
+          sfc_state%v_deconv(I,j) = sfc_deconv_const * sfc_state%v(I,j) &
                               - CS%sfc_deconv_factor * ( (sfc_state%v(I-1,j) + sfc_state%v(I,j-1)) &
                                                        + (sfc_state%v(I+1,j) + sfc_state%v(I,j+1)) )
-      else
+        else
+          sfc_state%v_deconv(i,J) = sfc_state%v(i,J)
+        endif
+      enddo ; enddo
+      call pass_vector(sfc_state%u_deconv, sfc_state%v_deconv, G%domain)
+    else
+      do j=js,je ; do I=IscB-1,IecB
+        sfc_state%u_deconv(I,j) = sfc_state%u(I,j)
+      enddo ; enddo
+      do J=JscB-1,JecB ; do i=is,ie
         sfc_state%v_deconv(i,J) = sfc_state%v(i,J)
-      endif
-    enddo ; enddo
-    call pass_vector(sfc_state%u_deconv, sfc_state%v_deconv, G%domain)
+      enddo ; enddo
+    endif
   endif
 
   if (allocated(sfc_state%melt_potential)) then
