@@ -452,7 +452,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
   endif
 
   call extract_surface_state(OS%MOM_CSp, OS%sfc_state)
-! get number of processors and PE list for stocasthci physics initialization
+! get number of processors and PE list for stochastic physics initialization
   call get_param(param_file, mdl, "DO_SPPT", OS%do_sppt, &
                  "If true, then stochastically perturb the thermodynamic "//&
                  "tendencies of T,S, and h.  Amplitude and correlations are "//&
