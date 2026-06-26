@@ -4322,8 +4322,9 @@ subroutine extract_surface_state(CS, sfc_state_in)
                                                    + (sfc_state%SSS(i+1,j) + sfc_state%SSS(i,j+1)) )
         else
           sfc_state%SSS_deconv(i,j) = sfc_state%SSS(i,j)
-          sfc_state%SST_deconv(i,j) = sfc_state%SST(i,j)
         endif
+        ! Don't allow negative salinity
+        if (sfc_state%SSS_deconv(i,j) < 0.0) sfc_state%SSS_deconv(i,j) = 0.0
       enddo ; enddo
       call pass_var(sfc_state%SSS_deconv, G%domain)
     else
