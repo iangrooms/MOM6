@@ -401,7 +401,7 @@ subroutine ocean_model_init(Ocean_sfc, OS, Time_init, Time_in, gas_fields_ocn, i
        "If true, enables surface wave modules.", default=.false.)
   call get_param(param_file, mdl, "USE_MARBL_TRACERS", OS%use_MARBL, &
                  default=.false., do_not_log=.true.)
-  call get_param(param_file, "MOM", "COMPUTE_SFC_DECONV", CS%compute_sfc_deconv, &
+  call get_param(param_file, "MOM", "COMPUTE_SFC_DECONV", compute_sfc_deconv, &
                  "If true, compute deconvolved surface fields: temperature, "//&
                  "salinity, and lateral velocity components. To selectively exempt "//&
                  "fields set COMPUTE_SS{S,T,U}_DECONV=False.", &
