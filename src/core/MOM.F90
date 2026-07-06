@@ -2834,7 +2834,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   if (CS%compute_sfc_deconv) then
     call get_param(param_file, "MOM", "SFC_DECONV_FACTOR", CS%sfc_deconv_factor, &
                    "Factor c to use in surface field deconvolution operator "//&
-                   "I - c * dx^2 * Laplacian.", default=0.1666667, units="nondim")
+                   "I - c * dx^2 * Laplacian.", default=0.375, units="nondim")
     call get_param(param_file, "MOM", "COMPUTE_SST_DECONV", CS%compute_sst_deconv, &
                    "If true, compute deconvolved SST.",default=.true.)
     call get_param(param_file, "MOM", "COMPUTE_SSS_DECONV", CS%compute_sss_deconv, &
