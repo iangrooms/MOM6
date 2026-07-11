@@ -3622,15 +3622,15 @@ end subroutine hor_visc_end
 !! some combination of a biharmonic viscosity and a Laplacian viscosity. Either or
 !! both may use a coefficient that depends on the shear and strain of the flow.
 !! All metric terms are retained. The Laplacian is calculated as the divergence of
-!! a stress tensor, using the form suggested by \cite Smagorinsky1993. The biharmonic
+!! a stress tensor, using the form suggested by :cite:`Smagorinsky1993`. The biharmonic
 !! is calculated by twice applying the divergence of the stress tensor that is
 !! used to calculate the Laplacian, but without the dependence on thickness in the
 !! first pass. This form permits a variable viscosity, and indicates no
 !! acceleration for either resting fluid or solid body rotation.
 !!
-!! The form of the viscous accelerations is discussed extensively in \cite griffies2000,
+!! The form of the viscous accelerations is discussed extensively in :cite:`griffies2000`,
 !! and the implementation here follows that discussion closely.
-!! We use the notation of \cite Smith2003 with the exception that the
+!! We use the notation of :cite:`Smith2003` with the exception that the
 !! isotropic viscosity is \f$\kappa_h\f$.
 !!
 !! In general, the horizontal stress tensor can be written as
@@ -3680,7 +3680,7 @@ end subroutine hor_visc_end
 !! \f}
 !!
 !! The viscosity \f$\kappa_h\f$ may either be a constant or variable. For example,
-!! \f$\kappa_h\f$ may vary with the shear, as proposed by \cite Smagorinsky1993.
+!! \f$\kappa_h\f$ may vary with the shear, as proposed by :cite:`Smagorinsky1993`.
 !!
 !! The accelerations resulting form the divergence of the stress tensor are
 !! \f{eqnarray*}{
@@ -3800,7 +3800,7 @@ end subroutine hor_visc_end
 !! grid-spacing and time-step and used to clip calculated viscosities. The maximum is applied
 !! after all other components have been combined.
 !!
-!! The 2D biharmonic Leith+E scheme from \cite grooms2023 is also available.
+!! The 2D biharmonic Leith+E scheme from :cite:`grooms2023` is also available.
 !!
 !! \subsection section_viscous_boundary_conditions Viscous boundary conditions
 !!
@@ -3820,8 +3820,8 @@ end subroutine hor_visc_end
 !!
 !! \subsection section_anisotropic_viscosity Anisotropic viscosity
 !!
-!! \cite Large2001 proposed enhancing viscosity in a particular direction and the
-!! approach was generalized in \cite Smith2003. We use the second form of their
+!! :cite:`Large2001` proposed enhancing viscosity in a particular direction and the
+!! approach was generalized in :cite:`Smith2003`. We use the second form of their
 !! two coefficient anisotropic viscosity (section 4.3). We also replace their
 !! \f$A^\prime\f$ and $D$ such that \f$2A^\prime = 2 \kappa_h + D\f$ and
 !! \f$\kappa_a = D\f$ so that \f$\kappa_h\f$ can be considered the isotropic
@@ -3941,7 +3941,7 @@ end subroutine hor_visc_end
 !! Monthly Weather Review, 128(8), 2935-2946.
 !! https://doi.org/10.1175/1520-0493(2000)128%3C2935:BFWASL%3E2.0.CO;2
 !!
-!! Grooms, I., 2023. Backscatter in energetically-constrained Leith parameterizations. 
+!! Grooms, I., 2023. Backscatter in energetically-constrained Leith parameterizations.
 !! Ocean Modelling, 186, p.102265. https://doi.org/10.1016/j.ocemod.2023.102265
 !!
 !! Large, W.G., Danabasoglu, G., McWilliams, J.C., Gent, P.R. and Bryan, F.O.,
