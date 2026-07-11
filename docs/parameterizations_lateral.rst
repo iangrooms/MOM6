@@ -27,8 +27,13 @@ See :cite:`jansen2015` and :cite:`marshall2010`.
 Backscatter
 -----------
 
-A parameterization of the upscale unresolved cascade utilizes MOM_MEKE
-and negative Laplacian viscosity in MOM_hor_visc.
+* A parameterization of the upscale unresolved cascade that utilizes MOM_MEKE
+  and negative Laplacian viscosity is available in MOM_hor_visc. For details see 
+  :cite:`jansen2015b,yankovsky24`
+* The 2D biharmonic Leith+E backscatter scheme is also available via MOM_hor_visc. For details
+  see :cite:`grooms2023`.
+* The Stochastic GM+E backscatter scheme is also available via MOM_stochastics. For details
+  see :cite:`grooms2025`
 
 Mixed layer restratification by sub-mesoscale eddies
 ----------------------------------------------------
