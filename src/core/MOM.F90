@@ -4343,6 +4343,8 @@ subroutine extract_surface_state(CS, sfc_state_in)
         else
           sfc_state%SST_deconv(i,j) = sfc_state%SST(i,j)
         endif
+        call calculate_TFreeze(sfc_state%SSS_deconv(i,j), 0.0, T_freeze(i), CS%tv%eqn_of_state)
+        sfc_state%SST_deconv(i,j) = max(sfc_state%SST_deconv(i,j), T_freeze(i))
       enddo ; enddo
       call pass_var(sfc_state%SST_deconv, G%domain)
     else
