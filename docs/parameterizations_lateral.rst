@@ -29,7 +29,7 @@ Backscatter
 
 * A parameterization of the upscale unresolved cascade that utilizes MOM_MEKE
   and negative Laplacian viscosity is available in MOM_hor_visc. For details see 
-  :cite:`jansen2015b,yankovsky24`
+  :cite:`jansen2015b,yankovsky2024`
 * The 2D biharmonic Leith+E backscatter scheme is also available via MOM_hor_visc. For details
   see :cite:`grooms2023`.
 * The Stochastic GM+E backscatter scheme is also available via MOM_stochastics. For details
