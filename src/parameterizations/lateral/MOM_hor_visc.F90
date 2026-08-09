@@ -3754,7 +3754,8 @@ end subroutine hor_visc_end
 !! \f]
 !! where \f$r(\Delta,L_d)\f$ is a resolution function. The flow-aware components can optionally
 !! be added to the static components instead. A minimum can be also enforced after resolution
-!! scaling.
+!! scaling. The parameters of the resolution function for viscosity are controlled by
+!! <code>VISC_RES_SCALE_COEF</code> and <code>VISC_RES_FN_POWER</code>.
 !!
 !! A maximum stable viscosity, \f$\kappa_{max}(x,y)\f$ is calculated based on the
 !! grid-spacing and time-step and used to clip calculated viscosities. The maximum is applied

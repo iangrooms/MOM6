@@ -2196,8 +2196,12 @@ end subroutine VarMix_end
 !! r(\Delta,L_d) = \frac{1}{1+(\alpha R)^p}
 !! \f]
 !!
-!! The resolution function can be applied independently to thickness diffusion \(module mom_thickness_diffuse\),
-!! tracer diffusion \(mom_tracer_hordiff\) lateral viscosity \(mom_hor_visc\).
+!! The resolution function can be applied to thickness diffusion \(module mom_thickness_diffuse\),
+!! tracer diffusion \(mom_tracer_hordiff\), and lateral viscosity \(mom_hor_visc\).
+!! <code>VISC_RES_SCALE_COEF</code> and <code>VISC_RES_FN_POWER</code> control the \f$\alpha\f$ and \f$p\f$
+!! parameters of the resolution function for viscosity and tracer diffusion, while
+!! <code>KH_RES_SCALE_COEF</code> and <code>KH_RES_FN_POWER</code> control the parameters of the
+!! resolution function for thickness diffusion.
 !!
 !! Robert Hallberg, 2013: Using a resolution function to regulate parameterizations of oceanic mesoscale eddy effects.
 !! Ocean Modelling, 71, pp 92-103.  http://dx.doi.org/10.1016/j.ocemod.2013.08.007
@@ -2208,10 +2212,10 @@ end subroutine VarMix_end
 !! | -                     | <code>RESOLN_SCALED_KH</code> |
 !! | -                     | <code>RESOLN_SCALED_KHTH</code> |
 !! | -                     | <code>RESOLN_SCALED_KHTR</code> |
-!! | \f$ \alpha \f$        | <code>KH_RES_SCALE_COEF</code> (for thickness and tracer diffusivity) |
-!! | \f$ p \f$             | <code>KH_RES_FN_POWER</code> (for thickness and tracer diffusivity) |
-!! | \f$ \alpha \f$        | <code>VISC_RES_SCALE_COEF</code> (for lateral viscosity) |
-!! | \f$ p \f$             | <code>VISC_RES_FN_POWER</code> (for lateral viscosity) |
+!! | \f$ \alpha \f$        | <code>KH_RES_SCALE_COEF</code> (for thickness diffusivity) |
+!! | \f$ p \f$             | <code>KH_RES_FN_POWER</code> (for thickness diffusivity) |
+!! | \f$ \alpha \f$        | <code>VISC_RES_SCALE_COEF</code> (for lateral viscosity and tracer diffusivity) |
+!! | \f$ p \f$             | <code>VISC_RES_FN_POWER</code> (for lateral viscosity and tracer diffusivity) |
 !! | -                     | <code>GILL_EQUATORIAL_LD</code> |
 !!
 !!
