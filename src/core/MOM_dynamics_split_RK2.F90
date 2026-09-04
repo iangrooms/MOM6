@@ -1985,7 +1985,7 @@ end subroutine end_dyn_split_RK2
 !!  initialize_dyn_split_RK2 initializes the cpu clocks that are
 !!  used in this module.  For largely historical reasons, this module
 !!  does not have its own control structure, but shares the same
-!!  control structure with MOM.F90 and the other MOM_dynamics_...
+!!  control structure with MOM.F90 and the other MOM_dynamics_???
 !!  modules.
 
 end module MOM_dynamics_split_RK2

@@ -362,8 +362,8 @@ type, public :: MOM_control_struct ; private
                                 !! This is only valid when interp_p_surf is true.
   real, dimension(:,:), pointer :: &
     p_surf_prev  => NULL(), &   !< surface pressure [R L2 T-2 ~> Pa] at end  previous call to step_MOM
-    p_surf_begin => NULL(), &   !< surface pressure [R L2 T-2 ~> Pa] at start of step_MOM_dyn_...
-    p_surf_end   => NULL()      !< surface pressure [R L2 T-2 ~> Pa] at end   of step_MOM_dyn_...
+    p_surf_begin => NULL(), &   !< surface pressure [R L2 T-2 ~> Pa] at start of step_MOM_dyn_???
+    p_surf_end   => NULL()      !< surface pressure [R L2 T-2 ~> Pa] at end   of step_MOM_dyn_???
 
   ! Variables needed to reach between start and finish phases of initialization
   logical :: write_IC           !< If true, then the initial conditions will be written to file
@@ -533,7 +533,7 @@ integer :: id_clock_varT
 contains
 
 !> This subroutine orchestrates the time stepping of MOM.  The adiabatic
-!! dynamics are stepped by calls to one of the step_MOM_dyn_...routines.
+!! dynamics are stepped by calls to one of the step_MOM_dyn_??? routines.
 !! The action of lateral processes on tracers occur in calls to
 !! advect_tracer and tracer_hordiff.  Vertical mixing and possibly remapping
 !! occur inside of diabatic.
