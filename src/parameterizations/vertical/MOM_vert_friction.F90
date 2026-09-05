@@ -272,7 +272,7 @@ subroutine vertNLstress(ui, vi, hbl_h, h, forces, dt, lpost, Cemp_NL, G, GV, US,
             sigma = depth / hbl_u(i,j)
             call cvmix_kpp_composite_Gshape(sigma,Gat1,Gsig,dGdsig)
             ! nonlocal boundary-layer increment
-            uInc_u(I,j,k)  = dt * Cemp_NL * taux_u(I,j) * dGdsig / (hbl_u(I,j) * GV%H_to_Z)
+            uInc_u(I,j,k)  = -dt * Cemp_NL * taux_u(I,j) * dGdsig / (hbl_u(I,j) * GV%H_to_Z)
             ui(I,j,k) = ui(I,j,k) + uInc_u(I,j,k)
           else
             uInc_u(I,j,k) = 0.0
@@ -306,7 +306,7 @@ subroutine vertNLstress(ui, vi, hbl_h, h, forces, dt, lpost, Cemp_NL, G, GV, US,
             sigma = depth / hbl_v(i,J)
             call cvmix_kpp_composite_Gshape(sigma,Gat1,Gsig,dGdsig)
             ! nonlocal boundary-layer increment
-            vInc_v(i,J,k) = dt * Cemp_NL * tauy_v(i,J) * dGdsig / (hbl_v(i,J) * GV%H_to_Z)
+            vInc_v(i,J,k) = -dt * Cemp_NL * tauy_v(i,J) * dGdsig / (hbl_v(i,J) * GV%H_to_Z)
             vi(i,J,k) = vi(i,J,k) + vInc_v(i,J,k)
           else
             vInc_v(i,J,k)  = 0.0
