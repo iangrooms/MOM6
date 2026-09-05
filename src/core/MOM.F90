@@ -2385,7 +2385,9 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   logical :: symmetric         ! If true, use symmetric memory allocation.
   logical :: save_IC           ! If true, save the initial conditions.
   logical :: do_unit_tests     ! If true, call unit tests.
-  logical :: fpmix             ! Needed to decide if BLD should be passed to RK2.
+  logical :: nlVstress         ! Needed to decide if BLD should be passed to RK2.
+  logical :: fpmix             ! The value of the deprecated FPMIX runtime parameter, now used
+                               ! to determine the default for its replacement, NL_VSTRESS.
   logical :: test_grid_copy = .false.
 
   logical :: bulkmixedlayer    ! If true, a refined bulk mixed layer scheme is used
@@ -2499,13 +2501,16 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
                  default=.false.)
   endif
 
-  ! FPMIX is needed to decide if boundary layer depth should be passed to RK2
+  ! NL_VSTRESS is needed to decide if boundary layer depth should be passed to RK2.
+  ! The deprecated FPMIX determines its default value, in case NL_VSTRESS is not set.
   call get_param(param_file, '', "FPMIX", fpmix, &
-                 "If true, add non-local momentum flux increments and diffuse down the Eulerian gradient.", &
                  default=.false., do_not_log=.true.)
-  if (fpmix .and. .not. CS%split)  then
+  call get_param(param_file, '', "NL_VSTRESS", nlVstress, &
+                 "If true, add non-local momentum flux increments.", &
+                 default=fpmix, do_not_log=.true.)
+  if (nlVstress .and. .not. CS%split)  then
     call MOM_error(FATAL, "initialize_MOM: "//&
-       "FPMIX=True only works when SPLIT=True.")
+       "NL_VSTRESS=True only works when SPLIT=True.")
   endif
   call openParameterBlock(param_file, 'KPP', do_not_log=.true.)
   call get_param(param_file, '', 'STOKES_MOST', CS%StokesMOST, &
@@ -3761,7 +3766,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, &
   CS%vertex_shear = kappa_shear_at_vertex(param_file)
 
   ! GMM, the following is needed to get BLDs into the dynamics module
-  if (CS%split .and. fpmix) then
+  if (CS%split .and. nlVstress) then
     call init_dyn_split_RK2_diabatic(CS%diabatic_CSp, CS%dyn_split_RK2_CSp)
   endif
 

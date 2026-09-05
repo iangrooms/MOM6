@@ -120,6 +120,13 @@ type, public :: wave_parameters_CS ; private
   integer, public :: NumBands = 0   !< Number of wavenumber/frequency partitions
                                     !! Must match the number of bands provided
                                     !! via either coupling or file.
+  logical, public :: LagrangianMixing = .true. !< True if the implicit vertical mixing of
+                              !! momentum acts on the model (Lagrangian mean) current,
+                              !! as in Reichl et al., 2016 KPP-LT approach.  If false
+                              !! and waves are in use, the Stokes drift is removed
+                              !! before the implicit vertical viscosity solver and
+                              !! restored afterward, so that the mixing acts on the
+                              !! Eulerian shear.
 
   ! The remainder of this control structure is private
   integer :: WaveMethod = -99 !< Options for including wave information
@@ -129,11 +136,6 @@ type, public :: wave_parameters_CS ; private
                               !!   2 - DHH85
                               !!   3 - LF17
                               !! -99 - No waves computed, but empirical Langmuir number used.
-  logical :: LagrangianMixing !< This feature is in development and not ready
-                              !! True if Stokes drift is present and mixing
-                              !! should be applied to Lagrangian current
-                              !! (mean current + Stokes drift).
-                              !! See Reichl et al., 2016 KPP-LT approach
   logical :: StokesMixing     !< This feature is in development and not ready.
                               !! True if vertical mixing of momentum
                               !! should be applied directly to Stokes current
@@ -299,6 +301,8 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags
   logical :: use_waves
   logical :: StatisticalWaves
+  logical :: fpmix                ! The value of the FPMIX runtime parameter, which determines
+                                  ! the default for LAGRANGIAN_MIXING. (FPMIX will be obsolete in the future.)
 
   ! Dummy Check
   if (.not. associated(CS)) then
@@ -361,13 +365,19 @@ subroutine MOM_wave_interface_init(time, G, GV, US, param_file, CS, diag)
 
   ! Wave modified physics
   !  Presently these are all in research mode
+  ! The FPMIX parameter historically enabled both the nonlocal momentum flux
+  ! increments (now NL_VSTRESS) and the mixing of the Eulerian shear in vertvisc (now
+  ! LAGRANGIAN_MIXING=False).  To reproduce the behavior of existing configurations that
+  ! set FPMIX, it is honored here as setting the default of LAGRANGIAN_MIXING; an
+  ! explicitly set LAGRANGIAN_MIXING takes precedence.
+  fpmix = .false.
+  call get_param(param_file, mdl, "FPMIX", fpmix, default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "LAGRANGIAN_MIXING", CS%LagrangianMixing, &
-                 "Flag to use Lagrangian Mixing of momentum", default=.false., &
-                 do_not_log=.not.use_waves)
-  if (CS%LagrangianMixing) then
-    ! Force Code Intervention
-    call MOM_error(FATAL,"Should you be enabling Lagrangian Mixing? Code not ready.")
-  endif
+                 "If true, the implicit vertical mixing of momentum acts on the model "//&
+                 "(Lagrangian mean) current.  If false and waves are in use, the Stokes "//&
+                 "drift is removed before the implicit vertical viscosity solver and "//&
+                 "restored afterward, so that the mixing acts on the Eulerian shear.", &
+                 default=.not.fpmix, do_not_log=.not.use_waves)
   call get_param(param_file, mdl, "STOKES_MIXING", CS%StokesMixing, &
                  "Flag to use Stokes Mixing of momentum", default=.false., &
                  do_not_log=.not.use_waves)
