@@ -971,16 +971,16 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
     enddo ; enddo
   endif
 
+  do j=js-1,je+1 ; do i=is-1,ie+1
+    CS%MLD_filtered_slow(i,j) = big_H(i,j)
+  enddo ; enddo
+
   ! Smoothly turn off the scheme by reducing the MLD when the MLD is greater than CS%MLE_TAPER_FN_DEPTH
   if ((CS%MLE_TAPER_FN_POWER > 0) .and. (CS%MLE_TAPER_FN_DEPTH > 0.)) then
     do j=js-1,je+1 ; do i=is-1,ie+1
       big_H(i,j) = big_H(i,j) / (1. + (big_H(i,j)/CS%MLE_TAPER_FN_DEPTH)**CS%MLE_TAPER_FN_POWER)
     enddo ; enddo
   endif
-
-  do j=js-1,je+1 ; do i=is-1,ie+1
-    CS%MLD_filtered_slow(i,j) = big_H(i,j)
-  enddo ; enddo
 
   ! Estimate w'u' at h-points, with a floor to avoid division by zero later.
   if (allocated(tv%SpV_avg) .and. .not.(GV%Boussinesq .or. GV%semi_Boussinesq)) then
