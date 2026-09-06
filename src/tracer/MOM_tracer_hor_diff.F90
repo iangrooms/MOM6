@@ -1846,5 +1846,11 @@ end subroutine tracer_hor_diff_end
 !!  diffusion if Khtr is defined and positive.  The tracer diffusion
 !!  can use a suitable number of iterations to guarantee stability
 !!  with an arbitrarily large time step.
+!!
+!! Whether the resolution function is applied is controlled by <code>RESOLN_SCALED_KHTR</code>.
+!! The parameters of the resolution function for tracer horizontal diffusion are controlled by
+!! <code>VISC_RES_SCALE_COEF</code> and <code>VISC_RES_FN_POWER</code>. They are not controlled
+!! by the parameters of the GM resolution function, <code>KH_RES_SCALE_COEF</code> and
+!! <code>KH_RES_FN_POWER</code>.
 
 end module MOM_tracer_hor_diff

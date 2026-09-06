@@ -2653,6 +2653,11 @@ end subroutine thickness_diffuse_end
 !! (enabled with <code>USE_VARIABLE_MIXING=True</code> and the term \f$<SN>\f$ is the vertical average slope
 !! times the buoyancy frequency prescribed by \cite visbeck1996.
 !!
+!! Whether the resolution function is applied is controlled by <code>RESOLN_SCALED_KHTH</code>.
+!! When <code>INTERPOLATE_RES_FN = True</code>, the parameters of the resolution function for GM are
+!! controlled by <code>VISC_RES_SCALE_COEF</code> and <code>VISC_RES_FN_POWER</code>. Otherwise they are
+!! controlled by <code>KH_RES_SCALE_COEF</code> and <code>KH_RES_FN_POWER</code>.
+!!
 !! The result of the above expression is subsequently bounded by minimum and maximum values, including an upper
 !! diffusivity consistent with numerical stability (\f$ \kappa_{cfl} \f$ is calculated internally).
 !! \f[

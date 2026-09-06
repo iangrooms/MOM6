@@ -131,6 +131,8 @@ type, public :: KPP_CS ; private
   real    :: KPP_ER_Cb                 !< Entrainment Rule TKE buoyancy production weight [nondim]
   real    :: KPP_ER_Cs                 !< Entrainment Rule TKE Stokes production weight [nondim]
   real    :: KPP_ER_Cu                 !< Entrainment Rule TKE shear production weight [nondim]
+  logical :: KPP_USE_ER                !< If true and STOKES_MOST is enabled, use the Entrainment
+                                       !! Rule to diagnose entraining boundary layer depths
   logical :: STOKES_MIXING             !< Flag if model is mixing down Stokes gradient
                                        !! This is relevant for which current to use in RiB
   logical :: OBL_depth_bounds_bug      !< If true, limit the KPP boundary layer depth relative to
@@ -222,7 +224,7 @@ subroutine register_KPP_restarts(G, param_file, restart_CSp, CS)
   type(KPP_CS),         pointer        :: CS           !< module control structure
 
   character(len=40) :: mdl = 'MOM_CVMix_KPP' !< name of this module
-  logical :: use_kpp, fpmix
+  logical :: use_kpp, nlVstress, fpmix
 
   if (associated(CS)) call MOM_error(FATAL, 'MOM_CVMix_KPP, register_KPP_restarts: '// &
            'Control structure has already been initialized')
@@ -233,11 +235,14 @@ subroutine register_KPP_restarts(G, param_file, restart_CSp, CS)
 
   allocate(CS%OBLdepth(SZI_(G),SZJ_(G)), source=0.0)
 
-  ! FPMIX is needed to decide if boundary layer depth should be added to restart file
+  ! NL_VSTRESS is needed to decide if boundary layer depth should be added to restart file.
+  ! The FPMIX now determines its default value, in case NL_VSTRESS is not set.
   call get_param(param_file, '', "FPMIX", fpmix, &
-                 "If true, add non-local momentum flux increments and diffuse down the Eulerian gradient.", &
                  default=.false., do_not_log=.true.)
-    if (fpmix) call register_restart_field(CS%OBLdepth, 'KPP_OBLdepth', .false., restart_CSp)
+  call get_param(param_file, '', "NL_VSTRESS", nlVstress, &
+                 "If true, add non-local momentum flux increments.", &
+                 default=fpmix, do_not_log=.true.)
+  if (nlVstress) call register_restart_field(CS%OBLdepth, 'KPP_OBLdepth', .false., restart_CSp)
 
 end subroutine register_KPP_restarts
 
@@ -542,6 +547,10 @@ logical function KPP_init(paramFile, G, GV, US, diag, Time, CS, passive)
                  'Parameter for Stokes MOST convection entrainment (unresolved shear)', &
                  units="nondim", default=1.6)
 
+  call get_param(paramFile, mdl, "KPP_USE_ER", CS%KPP_USE_ER, &
+                 'If true and STOKES_MOST is enabled, use the Entrainment Rule to '//&
+                 'diagnose entraining boundary layer depths.', &
+                 default=.true., do_not_log=.not.CS%StokesMOST)
   call get_param(paramFile, mdl, "KPP_ER_Cb", CS%KPP_ER_Cb, &
                  'Entrainment Rule TKE buoyancy production weight', &
                  units="nondim", default=0.96)
@@ -1473,7 +1482,7 @@ subroutine KPP_compute_BLD(CS, G, GV, US, h, Temp, Salt, u, v, tv, uStar, buoyFl
         CS%OBLdepth(i,j) = max( CS%OBLdepth(i,j), -iFaceHeight(2) )     ! no shallower than top layer
       else
         ERdepth = 0.0
-        if ( CS%StokesMOST .and. (surfBuoy_NS < 0.0) ) then
+        if ( (CS%StokesMOST .and. CS%KPP_USE_ER) .and. (surfBuoy_NS < 0.0) ) then
           ! Search for Entrainment rule depth (ER_depth)
           call CVMix_kpp_compute_ER_depth(   &
                      z_inter,                & ! (in) Interface heights <= 0  [m]
@@ -1493,7 +1502,7 @@ subroutine KPP_compute_BLD(CS, G, GV, US, h, Temp, Salt, u, v, tv, uStar, buoyFl
           endif
         endif
 
-        ! Original Richardson Number method (always the case with CS%StokesMOST=False)
+        ! Original Richardson Number method (always the case when the Entrainment Rule is not in use)
         if (CS%ERdepth(i,j) == 0.) then
           Vt_layer = 1.0      ! CS%surf_layer_ext
           call CVMix_kpp_compute_turbulent_scales( &                             ! 1d_OBL

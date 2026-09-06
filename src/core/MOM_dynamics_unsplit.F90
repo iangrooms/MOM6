@@ -33,7 +33,7 @@ module MOM_dynamics_unsplit
 !*  initialize_dyn_unsplit  initializes the cpu clocks that are        *                                      *
 !*  used in this module.  For largely historical reasons, this module  *
 !*  does not have its own control structure, but shares the same       *
-!*  control structure with MOM.F90 and the other MOM_dynamics_...      *
+!*  control structure with MOM.F90 and the other MOM_dynamics_???      *
 !*  modules.                                                           *
 !*                                                                     *
 !*  Macros written all in capital letters are defined in MOM_memory.h. *

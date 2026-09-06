@@ -29,7 +29,7 @@ use MOM_debugging,         only : hchksum, uvchksum, query_debugging_checks
 use MOM_error_handler,     only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_error_handler,     only : MOM_set_verbosity, callTree_showQuery
 use MOM_error_handler,     only : callTree_enter, callTree_leave, callTree_waypoint
-use MOM_file_parser,       only : get_param, log_version, param_file_type
+use MOM_file_parser,       only : get_param, read_param, log_version, param_file_type
 use MOM_get_input,         only : directories
 use MOM_io,                only : vardesc, var_desc, EAST_FACE, NORTH_FACE
 use MOM_restart,           only : register_restart_field, register_restart_pair
@@ -75,7 +75,7 @@ use MOM_tidal_forcing,         only : tidal_forcing_init, tidal_forcing_end
 use MOM_unit_scaling,          only : unit_scale_type
 use MOM_vert_friction,         only : vertvisc, vertvisc_coef, vertvisc_remnant
 use MOM_vert_friction,         only : vertvisc_init, vertvisc_end, vertvisc_CS
-use MOM_vert_friction,         only : updateCFLtruncationValue, vertFPmix
+use MOM_vert_friction,         only : updateCFLtruncationValue, vertNLstress
 use MOM_verticalGrid,          only : verticalGrid_type, get_thickness_units
 use MOM_verticalGrid,          only : get_flux_units, get_tr_flux_units
 use MOM_wave_interface,        only : wave_parameters_CS, Stokes_PGF
@@ -190,7 +190,7 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   logical :: debug     !< If true, write verbose checksums for debugging purposes.
   logical :: debug_OBC !< If true, do additional calls resetting values to help debug the correctness
                        !! of the open boundary condition code.
-  logical :: fpmix     !< If true, add non-local momentum flux increments and diffuse down the Eulerian gradient.
+  logical :: nlVstress !< If true, add non-local momentum flux increments.
   logical :: module_is_initialized = .false. !< Record whether this module has been initialized.
   logical :: visc_rem_dt_bug = .true. !< If true, recover a bug that uses dt_pred rather than dt for vertvisc_rem
                                       !! at the end of predictor.
@@ -374,11 +374,6 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: v_old_rad_OBC ! The starting meridional velocities, which are
                                 ! saved for use in the radiation open boundary condition code [L T-1 ~> m s-1]
 
-  ! GMM, TODO: make these allocatable?
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: uold ! u-velocity before vert_visc is applied, for fpmix
-                                                     !                                      [L T-1 ~> m s-1]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: vold ! v-velocity before vert_visc is applied, for fpmix
-                                                     !                                      [L T-1 ~> m s-1]
   real :: pres_to_eta ! A factor that converts pressures to the units of eta
                       ! [H T2 R-1 L-2 ~> m Pa-1 or kg m-2 Pa-1]
   real, pointer, dimension(:,:) :: &
@@ -413,8 +408,9 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   logical :: Use_Stokes_PGF ! If true, add Stokes PGF to hydrostatic PGF
   !---For group halo pass
   logical :: showCallTree, sym
-  logical :: lFPpost        ! Used to only post diagnostics in vertFPmix when fpmix=true and
+  logical :: lNLpost        ! Used to only post diagnostics in vertNLstress when nlVstress=true and
                             ! in the  corrector step (not the predict)
+  logical :: waves_ok       ! True if the Waves control structure is present and associated
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz
   integer :: cont_stencil, obc_stencil, vel_stencil
   integer :: cor_stencil
@@ -429,6 +425,15 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
 
   showCallTree = callTree_showQuery()
   if (showCallTree) call callTree_enter("step_MOM_dyn_split_RK2(), MOM_dynamics_split_RK2.F90")
+
+  ! The nonlocal stress increments require wave (Stokes drift) information, so fail early
+  ! if an associated Waves control structure was not provided.
+  if (CS%nlVstress) then
+    waves_ok = .false.
+    if (present(Waves)) then ; if (associated(Waves)) waves_ok = .true. ; endif
+    if (.not. waves_ok) call MOM_error(FATAL, "MOM_dynamics_split_RK2, step_MOM_dyn_split_RK2: "//&
+        "NL_VSTRESS=True requires an associated Waves control structure (e.g., USE_WAVES=True).")
+  endif
 
   !$OMP parallel do default(shared)
   do k=1,nz
@@ -729,43 +734,23 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
     call uvchksum("0 before vertvisc: [uv]p", up, vp, G%HI,haloshift=0, symmetric=sym, unscale=US%L_T_to_m_s)
   endif
 
-  if (CS%fpmix) then
-    uold(:,:,:) = 0.0
-    vold(:,:,:) = 0.0
-    do k = 1, nz
-      do j = js , je
-        do I = Isq, Ieq
-          uold(I,j,k)   = up(I,j,k)
-        enddo
-      enddo
-      do J = Jsq, Jeq
-        do i = is, ie
-          vold(i,J,k)   = vp(i,J,k)
-        enddo
-      enddo
-    enddo
-  endif
-
   call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=1)
   call vertvisc_coef(up, vp, h, dz, forces, visc, tv, dt_pred, G, GV, US, CS%vertvisc_CSp, &
                      CS%OBC, VarMix)
 
-  if (CS%fpmix) then
+  if (CS%nlVstress) then
     hbl(:,:) = 0.0
     if (ASSOCIATED(CS%KPP_CSp)) call KPP_get_BLD(CS%KPP_CSp, hbl, G, US, m_to_BLD_units=GV%m_to_H)
     if (ASSOCIATED(CS%energetic_PBL_CSp)) &
       call energetic_PBL_get_MLD(CS%energetic_PBL_CSp, hbl, G, US, m_to_MLD_units=GV%m_to_H)
 
-    ! lFPpost must be false in the predictor step to avoid averaging into the diagnostics
-    lFPpost = .false.
-    call vertFPmix(up, vp, uold, vold, hbl, h, forces, dt_pred, lFPpost, CS%Cemp_NL,  &
-                   G, GV, US, CS%vertvisc_CSp, CS%OBC, waves=waves)
-    call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%AD_pred, CS%CDp, G, &
-                  GV, US, CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, fpmix=CS%fpmix, waves=waves)
-  else
-    call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%AD_pred, CS%CDp, G, &
-                  GV, US, CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
+    ! lNLpost must be false in the predictor step to avoid averaging into the diagnostics
+    lNLpost = .false.
+    call vertNLstress(up, vp, hbl, h, forces, dt_pred, lNLpost, CS%Cemp_NL,  &
+                      G, GV, US, CS%vertvisc_CSp, CS%OBC, waves=waves)
   endif
+  call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%AD_pred, CS%CDp, G, &
+                GV, US, CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
 
   if (showCallTree) call callTree_wayPoint("done with vertvisc (step_MOM_dyn_split_RK2)")
   if (G%nonblocking_updates) then
@@ -991,37 +976,16 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   ! u_av <- u_av + dt d/dz visc d/dz u_av
   call cpu_clock_begin(id_clock_vertvisc)
 
-  if (CS%fpmix) then
-    uold(:,:,:) = 0.0
-    vold(:,:,:) = 0.0
-    do k = 1, nz
-      do j = js , je
-        do I = Isq, Ieq
-          uold(I,j,k)   = u_inst(I,j,k)
-        enddo
-      enddo
-      do J = Jsq, Jeq
-        do i = is, ie
-          vold(i,J,k)   = v_inst(i,J,k)
-        enddo
-      enddo
-    enddo
-  endif
-
   call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=1)
   call vertvisc_coef(u_inst, v_inst, h, dz, forces, visc, tv, dt, G, GV, US, CS%vertvisc_CSp, CS%OBC, VarMix)
 
-  if (CS%fpmix) then
-    lFPpost = .true.
-    call vertFPmix(u_inst, v_inst, uold, vold, hbl, h, forces, dt, lFPpost, CS%Cemp_NL, &
-                   G, GV, US, CS%vertvisc_CSp, CS%OBC, Waves=Waves)
-    call vertvisc(u_inst, v_inst, h, forces, visc, dt, CS%OBC, CS%ADp, CS%CDp, G, GV, US, &
-         CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, fpmix=CS%fpmix, waves=waves)
-
-  else
-    call vertvisc(u_inst, v_inst, h, forces, visc, dt, CS%OBC, CS%ADp, CS%CDp, G, GV, US, &
-                  CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
+  if (CS%nlVstress) then
+    lNLpost = .true.
+    call vertNLstress(u_inst, v_inst, hbl, h, forces, dt, lNLpost, CS%Cemp_NL, &
+                      G, GV, US, CS%vertvisc_CSp, CS%OBC, Waves=Waves)
   endif
+  call vertvisc(u_inst, v_inst, h, forces, visc, dt, CS%OBC, CS%ADp, CS%CDp, G, GV, US, &
+                CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
 
   if (G%nonblocking_updates) then
     call cpu_clock_end(id_clock_vertvisc)
@@ -1438,6 +1402,9 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: visc_rem_bug ! Stores the value of runtime paramter VISC_REM_BUG.
+  logical :: fpmix        ! The value of the FPMIX runtime parameter, which is
+                          ! adopted as the default for its replacement, NL_VSTRESS.
+  logical :: fpmix_set    ! True if FPMIX was explicitly set in the input parameter files.
   integer :: cor_stencil
 
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz
@@ -1503,10 +1470,17 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                  "If true, calculate the Coriolis accelerations at the end of each "//&
                  "timestep for use in the predictor step of the next split RK2 timestep.", &
                  default=.true.)
-  call get_param(param_file, mdl, "FPMIX", CS%fpmix, &
-                 "If true, add non-local momentum flux increments and diffuse down the Eulerian gradient.", &
-                 default=.false.)
-  if (CS%fpmix) then
+  ! FPMIX has been renamed NL_VSTRESS.  To allow a gradual transition, an explicitly set
+  ! FPMIX still works, acting as the default for NL_VSTRESS, but it triggers a warning.
+  fpmix = .false. ; fpmix_set = .false.
+  call read_param(param_file, "FPMIX", fpmix, set=fpmix_set)
+  if (fpmix_set) call MOM_error(WARNING, "MOM_dynamics_split_RK2, initialize_dyn_split_RK2: "//&
+      "The FPMIX runtime parameter has been renamed NL_VSTRESS.  FPMIX still works, but will be "//&
+      "obsoleted in future.  Please use NL_VSTRESS instead.")
+  call get_param(param_file, mdl, "NL_VSTRESS", CS%nlVstress, &
+                 "If true, add non-local momentum flux increments.", &
+                 default=fpmix)
+  if (CS%nlVstress) then
     call get_param(param_file, "MOM", "CEMP_NL", CS%Cemp_NL, &
                  "Empirical coefficient of non-local momentum mixing.", &
                  units="nondim", default=3.6)
@@ -1608,7 +1582,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                           CS%SAL_CSp, CS%tides_CSp)
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc, ADp=CS%ADp)
   call vertvisc_init(MIS, Time, G, GV, US, param_file, diag, CS%ADp, dirs, &
-                     ntrunc, CS%vertvisc_CSp, CS%fpmix)
+                     ntrunc, CS%vertvisc_CSp, CS%nlVstress)
   CS%set_visc_CSp => set_visc
   call updateCFLtruncationValue(Time, CS%vertvisc_CSp, US, activate=is_new_run(restart_CS) )
 
@@ -1985,7 +1959,7 @@ end subroutine end_dyn_split_RK2
 !!  initialize_dyn_split_RK2 initializes the cpu clocks that are
 !!  used in this module.  For largely historical reasons, this module
 !!  does not have its own control structure, but shares the same
-!!  control structure with MOM.F90 and the other MOM_dynamics_...
+!!  control structure with MOM.F90 and the other MOM_dynamics_???
 !!  modules.
 
 end module MOM_dynamics_split_RK2

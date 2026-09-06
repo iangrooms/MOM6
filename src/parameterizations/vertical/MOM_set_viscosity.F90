@@ -2780,7 +2780,8 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
   ! Local variables
   logical :: use_kappa_shear, KS_at_vertex
   logical :: adiabatic, useKPP, useEPBL, use_ideal_age
-  logical :: do_brine_plume, use_hor_bnd_diff, use_neutral_diffusion, use_fpmix, use_StokesMOST
+  logical :: do_brine_plume, use_hor_bnd_diff, use_neutral_diffusion, use_nlVstress, use_StokesMOST
+  logical :: use_fpmix  ! This now determines the default for use_nlVstress.
   logical :: use_CVMix_shear, MLE_use_PBL_MLD, MLE_use_Bodner, use_CVMix_conv
   integer :: isd, ied, jsd, jed, nz
   real :: hfreeze !< If hfreeze > 0 [Z ~> m], melt potential will be computed.
@@ -2863,6 +2864,8 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
                  default=.false., do_not_log=.true.)
   call get_param(param_file, mdl, "FPMIX", use_fpmix, &
                  default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "NL_VSTRESS", use_nlVstress, &
+                 default=use_fpmix, do_not_log=.true.)
   call openParameterBlock(param_file, 'KPP', do_not_log=.true.)
   call get_param(param_file, mdl, 'STOKES_MOST', use_StokesMOST, &
                  default=.false., do_not_log=.true.)
@@ -2880,7 +2883,7 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
   if (use_StokesMOST .and. MLE_use_Bodner) then
     call safe_alloc_ptr(visc%Lam2, isd, ied, jsd, jed)
   endif
-  if ((hfreeze >= 0.0) .or. MLE_use_PBL_MLD .or. do_brine_plume .or. use_fpmix .or. &
+  if ((hfreeze >= 0.0) .or. MLE_use_PBL_MLD .or. do_brine_plume .or. use_nlVstress .or. &
       use_neutral_diffusion .or. use_hor_bnd_diff .or. use_ideal_age) then
     call safe_alloc_ptr(visc%h_ML, isd, ied, jsd, jed)
   endif
@@ -2897,7 +2900,7 @@ subroutine set_visc_register_restarts(HI, G, GV, US, param_file, visc, restart_C
     call register_restart_field(visc%Lam2, "Lam2", .false., restart_CS, &
                   "(Langmuir Number)^-2",  units="" )
   endif
-  if (MLE_use_PBL_MLD .or. do_brine_plume .or. use_fpmix .or. &
+  if (MLE_use_PBL_MLD .or. do_brine_plume .or. use_nlVstress .or. &
       use_neutral_diffusion .or. use_hor_bnd_diff .or. MLE_use_Bodner) then
     call register_restart_field(visc%h_ML, "h_ML", .false., restart_CS, &
                   "Instantaneous active mixing layer thickness", &
