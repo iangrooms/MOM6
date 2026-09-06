@@ -437,7 +437,7 @@ subroutine configure_MARBL_tracers(GV, US, param_file, CS)
       CS%sfo_cnt = CS%sfo_cnt + 1
     else if (trim(field_source) == "interior_tendency") then
       CS%ito_cnt = CS%ito_cnt + 1
-    end if
+    endif
 
     ! Total 3D Chlorophyll
     call MARBL_instances%add_output_for_GCM(num_elements=1, num_levels=nz, field_name="total_Chl", &
@@ -446,8 +446,8 @@ subroutine configure_MARBL_tracers(GV, US, param_file, CS)
       CS%sfo_cnt = CS%sfo_cnt + 1
     else if (trim(field_source) == "interior_tendency") then
       CS%ito_cnt = CS%ito_cnt + 1
-    end if
-  end if
+    endif
+  endif
 
   ! (5) Initialize forcing fields
   !     i. store all surface forcing indices
@@ -1000,23 +1000,23 @@ subroutine initialize_MARBL_tracers(restart, day, G, GV, US, h, param_file, diag
     ! 2. For a given autotroph, if one tracer is 0 they all are
     call MOM_error(NOTE, 'Enforcing consistency across autotroph tracer initial conditions')
     do j=G%jsc, G%jec ; do i=G%isc, G%iec
-      do k=1,GV%ke; do m=1, CS%ntr
+      do k=1,GV%ke ; do m=1, CS%ntr
         ! Ensure tracer concentrations are at / above minimum value
         if (CS%tracer_data(m)%tr(i,j,k) < CS%IC_min) CS%tracer_data(m)%tr(i,j,k) = CS%IC_min
 
         ! Copy tracer data into flat array
         MARBL_instances%tracers(m,k) = CS%tracer_data(m)%tr(i,j,k)
-      end do ; end do
+      enddo ; enddo
 
       ! call consistency enforcement
       call MARBL_instances%autotroph_tracer_consistency_enforce()
 
       ! Copy tracer data out of flat array
-      do k=1,GV%ke; do m=1, CS%ntr
+      do k=1,GV%ke ; do m=1, CS%ntr
         CS%tracer_data(m)%tr(i,j,k) = MARBL_instances%tracers(m,k)
-      end do ; end do
-    end do ; end do
-  end if
+      enddo ; enddo
+    enddo ; enddo
+  endif
 
   ! Initialize total chlorophyll to get SW Pen correct (if it wasn't initialized from restart file)
   if ((CS%total_Chl_ind > 0) .and. &
@@ -1362,7 +1362,7 @@ subroutine MARBL_tracers_column_physics(h_old, ea, eb, fluxes, dt, G, GV, US, CS
   real, dimension(SZI_(G),SZJ_(G)) :: flux_from_salt_flux ! Surface tracer flux from salt flux
                                                           ! [conc Z T-1 ~> conc m s-1].
   real, dimension(SZI_(G),SZJ_(G)) :: ref_mask ! Mask for 2D MARBL diags using ref_depth [1]
-  real, dimension(SZI_(G),SZJ_(G)) :: riv_flux_loc ! Local copy of CS%RIV_FLUXES*dt [mmol m-2 ~> conc H]
+  real, dimension(SZI_(G),SZJ_(G)) :: riv_flux_loc ! Local copy of CS%RIV_FLUXES*dt [conc H ~> mmol m-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: h_work ! Used so that h can be modified [H ~> m or kg m-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: bot_flux_to_tend  ! Conversion factor for bottom tlux -> tend
                                                                 ! [Z-1 ~> m-1]
@@ -1798,15 +1798,20 @@ subroutine MARBL_tracers_column_physics(h_old, ea, eb, fluxes, dt, G, GV, US, CS
       do k=1,nz ;do j=js,je ; do i=is,ie
         h_work(i,j,k) = h_old(i,j,k)
       enddo ; enddo ; enddo
-      ! CS%RIV_FLUXES is conc m/s, in_flux_optional expects time-integrated flux (conc H)
-      do j=js,je ; do i=is,ie
-        riv_flux_loc(i,j) = (CS%RIV_FLUXES(i,j,m) * (dt*US%T_to_s)) * GV%m_to_H
-      enddo ; enddo
-      if (CS%debug) &
-        call hchksum(riv_flux_loc(:,:), &
-            trim(MARBL_instances%tracer_metadata(m)%short_name)//' riv flux', G%HI, unscale=GV%H_to_m)
-      call applyTracerBoundaryFluxesInOut(G, GV, CS%tracer_data(m)%tr(:,:,:) , dt, fluxes, h_work, &
-          evap_CFL_limit, minimum_forcing_depth, in_flux_optional=riv_flux_loc)
+      if (CS%read_riv_fluxes) then
+        ! CS%RIV_FLUXES is conc m/s, in_flux_optional expects time-integrated flux (conc H)
+        do j=js,je ; do i=is,ie
+          riv_flux_loc(i,j) = (CS%RIV_FLUXES(i,j,m) * (dt*US%T_to_s)) * GV%m_to_H
+        enddo ; enddo
+        if (CS%debug) &
+          call hchksum(riv_flux_loc(:,:), &
+              trim(MARBL_instances%tracer_metadata(m)%short_name)//' riv flux', G%HI, unscale=GV%H_to_m)
+        call applyTracerBoundaryFluxesInOut(G, GV, CS%tracer_data(m)%tr(:,:,:) , dt, fluxes, h_work, &
+            evap_CFL_limit, minimum_forcing_depth, in_flux_optional=riv_flux_loc)
+      else
+        call applyTracerBoundaryFluxesInOut(G, GV, CS%tracer_data(m)%tr(:,:,:) , dt, fluxes, h_work, &
+            evap_CFL_limit, minimum_forcing_depth)
+      endif
       call tracer_vertdiff(h_work, ea, eb, dt, CS%tracer_data(m)%tr(:,:,:), G, GV, &
           sfc_flux=GV%Rho0 * CS%STF(:,:,m))
     enddo
@@ -1893,6 +1898,43 @@ subroutine MARBL_tracers_column_physics(h_old, ea, eb, fluxes, dt, G, GV, US, CS
     enddo
   endif
 
+  if (CS%read_riv_fluxes) then
+    if (CS%no3_riv_flux > 0 .and. CS%tracer_inds%no3_ind > 0) &
+      call post_data(CS%no3_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%no3_ind), CS%diag)
+    if (CS%po4_riv_flux > 0 .and. CS%tracer_inds%po4_ind > 0) &
+      call post_data(CS%po4_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%po4_ind), CS%diag)
+    if (CS%don_riv_flux > 0 .and. CS%tracer_inds%don_ind > 0) &
+      call post_data(CS%don_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%don_ind), CS%diag)
+    if (CS%donr_riv_flux > 0 .and. CS%tracer_inds%donr_ind > 0) &
+      call post_data(CS%donr_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%donr_ind), CS%diag)
+    if (CS%dop_riv_flux > 0 .and. CS%tracer_inds%dop_ind > 0) &
+      call post_data(CS%dop_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%dop_ind), CS%diag)
+    if (CS%dopr_riv_flux > 0 .and. CS%tracer_inds%dopr_ind > 0) &
+      call post_data(CS%dopr_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%dopr_ind), CS%diag)
+    if (CS%sio3_riv_flux > 0 .and. CS%tracer_inds%sio3_ind > 0) &
+      call post_data(CS%sio3_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%sio3_ind), CS%diag)
+    if (CS%fe_riv_flux > 0 .and. CS%tracer_inds%fe_ind > 0) &
+      call post_data(CS%fe_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%fe_ind), CS%diag)
+    if (CS%doc_riv_flux > 0 .and. CS%tracer_inds%doc_ind > 0) &
+      call post_data(CS%doc_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%doc_ind), CS%diag)
+    if (CS%docr_riv_flux > 0 .and. CS%tracer_inds%docr_ind > 0) &
+      call post_data(CS%docr_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%docr_ind), CS%diag)
+    if (CS%alk_riv_flux > 0 .and. CS%tracer_inds%alk_ind > 0) &
+      call post_data(CS%alk_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%alk_ind), CS%diag)
+    if (CS%alk_alt_co2_riv_flux > 0  .and. CS%tracer_inds%alk_alt_co2_ind > 0) &
+      call post_data(CS%alk_alt_co2_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%alk_alt_co2_ind), &
+          CS%diag)
+    if (CS%dic_riv_flux > 0 .and. CS%tracer_inds%dic_ind > 0) &
+      call post_data(CS%dic_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%dic_ind), CS%diag)
+    if (CS%dic_alt_co2_riv_flux > 0 .and. CS%tracer_inds%dic_alt_co2_ind > 0) &
+      call post_data(CS%dic_alt_co2_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%dic_alt_co2_ind), &
+          CS%diag)
+  endif
+
+  if (CS%abio_dic_on) then
+    if (CS%d14c_id > 0) &
+      call post_data(CS%d14c_id, CS%d14c, CS%diag)
+  endif
 
 end subroutine MARBL_tracers_column_physics
 
@@ -2057,44 +2099,6 @@ subroutine MARBL_tracers_set_forcing(day_start, G, CS)
       CS%restoring_in(i,j,k,m) = G%mask2dT(i,j) * CS%restoring_in(i,j,k,m)
     enddo ; enddo ; enddo
   enddo
-
-  ! Post Forcing to Diagnostics
-  if (CS%read_riv_fluxes) then
-    if (CS%no3_riv_flux > 0 .and. CS%tracer_inds%no3_ind > 0) &
-      call post_data(CS%no3_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%no3_ind), CS%diag)
-    if (CS%po4_riv_flux > 0 .and. CS%tracer_inds%po4_ind > 0) &
-      call post_data(CS%po4_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%po4_ind), CS%diag)
-    if (CS%don_riv_flux > 0 .and. CS%tracer_inds%don_ind > 0) &
-      call post_data(CS%don_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%don_ind), CS%diag)
-    if (CS%donr_riv_flux > 0 .and. CS%tracer_inds%donr_ind > 0) &
-      call post_data(CS%donr_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%donr_ind), CS%diag)
-    if (CS%dop_riv_flux > 0 .and. CS%tracer_inds%dop_ind > 0) &
-      call post_data(CS%dop_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%dop_ind), CS%diag)
-    if (CS%dopr_riv_flux > 0 .and. CS%tracer_inds%dopr_ind > 0) &
-      call post_data(CS%dopr_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%dopr_ind), CS%diag)
-    if (CS%sio3_riv_flux > 0 .and. CS%tracer_inds%sio3_ind > 0) &
-      call post_data(CS%sio3_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%sio3_ind), CS%diag)
-    if (CS%fe_riv_flux > 0 .and. CS%tracer_inds%fe_ind > 0) &
-      call post_data(CS%fe_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%fe_ind), CS%diag)
-    if (CS%doc_riv_flux > 0 .and. CS%tracer_inds%doc_ind > 0) &
-      call post_data(CS%doc_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%doc_ind), CS%diag)
-    if (CS%docr_riv_flux > 0 .and. CS%tracer_inds%docr_ind > 0) &
-      call post_data(CS%docr_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%docr_ind), CS%diag)
-    if (CS%alk_riv_flux > 0 .and. CS%tracer_inds%alk_ind > 0) &
-      call post_data(CS%alk_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%alk_ind), CS%diag)
-    if (CS%alk_alt_co2_riv_flux > 0  .and. CS%tracer_inds%alk_alt_co2_ind > 0) &
-      call post_data(CS%alk_alt_co2_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%alk_alt_co2_ind), &
-          CS%diag)
-    if (CS%dic_riv_flux > 0 .and. CS%tracer_inds%dic_ind > 0) &
-      call post_data(CS%dic_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%dic_ind), CS%diag)
-    if (CS%dic_alt_co2_riv_flux > 0 .and. CS%tracer_inds%dic_alt_co2_ind > 0) &
-      call post_data(CS%dic_alt_co2_riv_flux, CS%RIV_FLUXES(:,:,CS%tracer_inds%dic_alt_co2_ind), &
-          CS%diag)
-  endif
-  if (CS%abio_dic_on) then
-    if (CS%d14c_id > 0) &
-      call post_data(CS%d14c_id, CS%d14c, CS%diag)
-  endif
 
 end subroutine MARBL_tracers_set_forcing
 
