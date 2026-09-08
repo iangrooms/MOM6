@@ -710,7 +710,8 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
   !$OMP   h_neglect, h_neglect3, inv_PI3, inv_PI6, &
   !$OMP   diffu, diffv, Kh_h, Kh_q, Ah_h, Ah_q, FrictWork, FrictWork_bh, FrictWork_GME, &
   !$OMP   div_xx_h, sh_xx_h, vort_xy_q, sh_xy_q, GME_coeff_h, GME_coeff_q, &
-  !$OMP   KH_u_GME, KH_v_GME, grid_Re_Kh, grid_Re_Ah, NoSt, ShSt, hu_cont, hv_cont, STOCH, zc &
+  !$OMP   KH_u_GME, KH_v_GME, grid_Re_Kh, grid_Re_Ah, NoSt, ShSt, hu_cont, hv_cont, STOCH, zc, &
+  !$OMP   BS_coeff_h, BS_coeff_q &
   !$OMP ) &
   !$OMP private( &
   !$OMP   i, j, k, n, tmp, &
@@ -730,7 +731,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
   !$OMP   vort_xy_smooth, vort_xy_dx_smooth, vort_xy_dy_smooth, &
   !$OMP   sh_xx_smooth, sh_xy_smooth, &
   !$OMP   vert_vort_mag_smooth, m_leithy, Ah_sq, AhLthy, &
-  !$OMP   Kh_BS, str_xx_bs, str_xy_bs, bs_coeff_h, bs_coeff_q &
+  !$OMP   Kh_BS, str_xx_bs, str_xy_bs &
   !$OMP ) &
   !$OMP firstprivate( &
   !$OMP   visc_limit_h, visc_limit_h_frac, visc_limit_h_flag, &
