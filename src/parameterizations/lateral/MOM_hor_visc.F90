@@ -710,7 +710,8 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
   !$OMP   h_neglect, h_neglect3, inv_PI3, inv_PI6, &
   !$OMP   diffu, diffv, Kh_h, Kh_q, Ah_h, Ah_q, FrictWork, FrictWork_bh, FrictWork_GME, &
   !$OMP   div_xx_h, sh_xx_h, vort_xy_q, sh_xy_q, GME_coeff_h, GME_coeff_q, &
-  !$OMP   KH_u_GME, KH_v_GME, grid_Re_Kh, grid_Re_Ah, NoSt, ShSt, hu_cont, hv_cont, STOCH, zc &
+  !$OMP   KH_u_GME, KH_v_GME, grid_Re_Kh, grid_Re_Ah, NoSt, ShSt, hu_cont, hv_cont, STOCH, zc, &
+  !$OMP   BS_coeff_h, BS_coeff_q &
   !$OMP ) &
   !$OMP private( &
   !$OMP   i, j, k, n, tmp, &
@@ -730,7 +731,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
   !$OMP   vort_xy_smooth, vort_xy_dx_smooth, vort_xy_dy_smooth, &
   !$OMP   sh_xx_smooth, sh_xy_smooth, &
   !$OMP   vert_vort_mag_smooth, m_leithy, Ah_sq, AhLthy, &
-  !$OMP   Kh_BS, str_xx_bs, str_xy_bs, bs_coeff_h, bs_coeff_q &
+  !$OMP   Kh_BS, str_xx_bs, str_xy_bs &
   !$OMP ) &
   !$OMP firstprivate( &
   !$OMP   visc_limit_h, visc_limit_h_frac, visc_limit_h_flag, &
@@ -3639,15 +3640,15 @@ end subroutine hor_visc_end
 !! some combination of a biharmonic viscosity and a Laplacian viscosity. Either or
 !! both may use a coefficient that depends on the shear and strain of the flow.
 !! All metric terms are retained. The Laplacian is calculated as the divergence of
-!! a stress tensor, using the form suggested by \cite Smagorinsky1993. The biharmonic
+!! a stress tensor, using the form suggested by :cite:`Smagorinsky1993`. The biharmonic
 !! is calculated by twice applying the divergence of the stress tensor that is
 !! used to calculate the Laplacian, but without the dependence on thickness in the
 !! first pass. This form permits a variable viscosity, and indicates no
 !! acceleration for either resting fluid or solid body rotation.
 !!
-!! The form of the viscous accelerations is discussed extensively in \cite griffies2000,
+!! The form of the viscous accelerations is discussed extensively in :cite:`griffies2000`,
 !! and the implementation here follows that discussion closely.
-!! We use the notation of \cite Smith2003 with the exception that the
+!! We use the notation of :cite:`Smith2003` with the exception that the
 !! isotropic viscosity is \f$\kappa_h\f$.
 !!
 !! In general, the horizontal stress tensor can be written as
@@ -3697,7 +3698,7 @@ end subroutine hor_visc_end
 !! \f}
 !!
 !! The viscosity \f$\kappa_h\f$ may either be a constant or variable. For example,
-!! \f$\kappa_h\f$ may vary with the shear, as proposed by \cite Smagorinsky1993.
+!! \f$\kappa_h\f$ may vary with the shear, as proposed by :cite:`Smagorinsky1993`.
 !!
 !! The accelerations resulting form the divergence of the stress tensor are
 !! \f{eqnarray*}{
@@ -3740,42 +3741,85 @@ end subroutine hor_visc_end
 !! The horizontal viscosity coefficient, \f$\kappa_h\f$, can have multiple components.
 !! The isotropic components are:
 !!   - A uniform background component, \f$\kappa_{bg}\f$.
-!!   - A constant but spatially variable 2D map, \f$\kappa_{2d}(x,y)\f$.
+!!   - A steady but spatially variable 2D map, \f$\kappa_{2d}(x,y)\f$.
 !!   - A ''MICOM'' viscosity, \f$U_\nu \Delta(x,y)\f$, which uses a constant
 !! velocity scale, \f$U_\nu\f$ and a measure of the grid-spacing \f$\Delta(x,y)^2 =
 !! \frac{2 \Delta x^2 \Delta y^2}{\Delta x^2 + \Delta y^2}\f$.
 !!   - A function of
 !! latitude, \f$\kappa_{\phi}(x,y) = \kappa_{\pi/2} |\sin(\phi)|^n\f$.
-!!   - A dynamic Smagorinsky viscosity, \f$\kappa_{Sm}(x,y,t) = C_{Sm} \Delta^2 \sqrt{\dot{e}_T^2 + \dot{e}_S^2}\f$.
-!!   - A dynamic Leith viscosity, \f$\kappa_{Lth}(x,y,t) =
+!!   - A Smagorinsky viscosity, \f$\kappa_{Sm}(x,y,t) = C_{Sm} \Delta^2 \sqrt{\dot{e}_T^2 + \dot{e}_S^2}\f$.
+!!   - A Leith viscosity, \f$\kappa_{Lth}(x,y,t) =
 !!                                    C_{Lth} \Delta^3 \sqrt{|\nabla \zeta|^2 + |\nabla \dot{e}_D|^2}\f$.
-!!
-!! A maximum stable viscosity, \f$\kappa_{max}(x,y)\f$ is calculated based on the
-!! grid-spacing and time-step and used to clip calculated viscosities.
+!!   - A MEKE-based viscosity \f$\kappa_{MEKE}\f$; see the :ref:`meke_viscosity_section`.
 !!
 !! The static components of \f$\kappa_h\f$ are first combined as follows:
 !! \f[
-!! \kappa_{static} = \min \left[ \max\left(
+!! \kappa_{static} = \max\left(
 !! \kappa_{bg},
 !! U_\nu \Delta(x,y),
 !! \kappa_{2d}(x,y),
 !! \kappa_\phi(x,y)
 !! \right)
-!! , \kappa_{max}(x,y) \right]
 !! \f]
 !! and stored in the module control structure as variables <code>Kh_bg_xx</code> and
 !! <code>Kh_bg_xy</code> for the tension (h-points) and shear (q-points) components
 !! respectively.
 !!
-!! The full viscosity includes the dynamic components as follows:
+!! The full viscosity includes the flow-aware components as follows:
 !! \f[
 !! \kappa_h(x,y,t) = r(\Delta,L_d)
-!! \max \left( \kappa_{static}, \kappa_{Sm}, \kappa_{Lth} \right)
+!! \max \left( \kappa_{static}, \kappa_{Sm}, \kappa_{Lth}, \kappa_{MEKE} \right)
 !! \f]
-!! where \f$r(\Delta,L_d)\f$ is a resolution function.
+!! where \f$r(\Delta,L_d)\f$ is a resolution function. The flow-aware components can optionally
+!! be added to the static components instead. A minimum can be also enforced after resolution
+!! scaling. The parameters of the resolution function for viscosity are controlled by
+!! <code>VISC_RES_SCALE_COEF</code> and <code>VISC_RES_FN_POWER</code>.
 !!
-!! The dynamic Smagorinsky and Leith viscosity schemes are exclusive with each
-!! other.
+!! A maximum stable viscosity, \f$\kappa_{max}(x,y)\f$ is calculated based on the
+!! grid-spacing and time-step and used to clip calculated viscosities. The maximum is applied
+!! after all other components have been combined.
+!!
+!! \subsection section_biharmonic_viscosity_coefficient Biharmonic viscosity coefficient
+!!
+!! The horizontal biharmonic viscosity coefficient, \f$A_h\f$, can have multiple components.
+!! The isotropic components are:
+!!   - A uniform background component, \f$A_{bg}\f$.
+!!   - A ''MICOM'' viscosity, \f$U_\nu \Delta(x,y)^3\f$, which uses a constant
+!! velocity scale, \f$U_\nu\f$ and a measure of the grid-spacing \f$\Delta(x,y)\f$ as above.
+!!   - A component based on the grid scale and a time scale \f$Delta(x,y)^4 / T\f$.
+!!   - A component that keeps the grid-Reynolds number fixed \f$\sqrt{KE} Delta(x,y)^3 / Re\f$.
+!!   - A Smagorinsky-like biharmonic viscosity,
+!!     \f$A_{Sm}(x,y,t) = C_{Sm} \Delta^4 \sqrt{\dot{e}_T^2 + \dot{e}_S^2} / 8\f$.
+!!   - A Leith viscosity, \f$A_{Lth}(x,y,t) =
+!!                                    C_{Lth} \Delta^r63 \sqrt{|\nabla^2 \zeta|^2}\f$.
+!!   - A MEKE-based viscosity \f$A_{MEKE}\f$; see the :ref:`meke_viscosity_section`.
+!!
+!! The static components of \f$A_h\f$ are first combined as follows:
+!! \f[
+!! A_{static} = \max\left(
+!! A_{bg},
+!! U_\nu \Delta(x,y)^3,
+!! \Delta(x,y)^4 / T
+!! \right)
+!! \f]
+!! and stored in the module control structure as variables <code>Kh_bg_xx</code> and
+!! <code>Kh_bg_xy</code> for the tension (h-points) and shear (q-points) components
+!! respectively.
+!!
+!! The full viscosity includes the flow-aware components as follows:
+!! \f[
+!! \kappa_h(x,y,t) =
+!! \max \left( A_{static}, A_{Sm}, A_{Lth} \right) + A_{MEKE}.
+!! \f]
+!!
+!! The grid-Reynolds number scheme is exclusive of all other schemes including the
+!! static background.
+!!
+!! A maximum stable viscosity, \f$A_{max}(x,y)\f$ is calculated based on the
+!! grid-spacing and time-step and used to clip calculated viscosities. The maximum is applied
+!! after all other components have been combined.
+!!
+!! The 2D biharmonic Leith+E scheme from :cite:`grooms2023` is also available.
 !!
 !! \subsection section_viscous_boundary_conditions Viscous boundary conditions
 !!
@@ -3795,8 +3839,8 @@ end subroutine hor_visc_end
 !!
 !! \subsection section_anisotropic_viscosity Anisotropic viscosity
 !!
-!! \cite Large2001 proposed enhancing viscosity in a particular direction and the
-!! approach was generalized in \cite Smith2003. We use the second form of their
+!! :cite:`Large2001` proposed enhancing viscosity in a particular direction and the
+!! approach was generalized in :cite:`Smith2003`. We use the second form of their
 !! two coefficient anisotropic viscosity (section 4.3). We also replace their
 !! \f$A^\prime\f$ and $D$ such that \f$2A^\prime = 2 \kappa_h + D\f$ and
 !! \f$\kappa_a = D\f$ so that \f$\kappa_h\f$ can be considered the isotropic
@@ -3915,6 +3959,9 @@ end subroutine hor_visc_end
 !! Smagorinsky-like viscosity for use in large-scale eddy-permitting ocean models.
 !! Monthly Weather Review, 128(8), 2935-2946.
 !! https://doi.org/10.1175/1520-0493(2000)128%3C2935:BFWASL%3E2.0.CO;2
+!!
+!! Grooms, I., 2023. Backscatter in energetically-constrained Leith parameterizations.
+!! Ocean Modelling, 186, p.102265. https://doi.org/10.1016/j.ocemod.2023.102265
 !!
 !! Large, W.G., Danabasoglu, G., McWilliams, J.C., Gent, P.R. and Bryan, F.O.,
 !! 2001: Equatorial circulation of a global ocean climate model with

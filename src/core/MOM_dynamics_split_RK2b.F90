@@ -73,7 +73,7 @@ use MOM_tidal_forcing,         only : tidal_forcing_init, tidal_forcing_end
 use MOM_unit_scaling,          only : unit_scale_type
 use MOM_vert_friction,         only : vertvisc, vertvisc_coef, vertvisc_remnant
 use MOM_vert_friction,         only : vertvisc_init, vertvisc_end, vertvisc_CS
-use MOM_vert_friction,         only : updateCFLtruncationValue, vertFPmix
+use MOM_vert_friction,         only : updateCFLtruncationValue, vertNLstress
 use MOM_verticalGrid,          only : verticalGrid_type, get_thickness_units
 use MOM_verticalGrid,          only : get_flux_units, get_tr_flux_units
 use MOM_wave_interface,        only : wave_parameters_CS, Stokes_PGF
@@ -180,7 +180,7 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
   logical :: debug   !< If true, write verbose checksums for debugging purposes.
   logical :: debug_OBC !< If true, do additional calls resetting values to help verify the correctness
                        !! of the open boundary condition code.
-  logical :: fpmix = .false.                 !< If true, applies profiles of momentum flux magnitude and direction.
+  logical :: nlVstress = .false.             !< If true, add non-local momentum flux increments.
   logical :: module_is_initialized = .false. !< Record whether this module has been initialized.
   logical :: visc_rem_dt_bug = .true. !< If true, recover a bug that uses dt_pred rather than dt for vertvisc_rem
                                       !! at the end of predictor.
@@ -370,9 +370,9 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
                                 ! saved for use in the Flather open boundary condition code [L T-1 ~> m s-1]
 
   ! GMM, TODO: make these allocatable?
-  ! real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: uold ! u-velocity before vert_visc is applied, for fpmix
+  ! real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: uold ! u-velocity before vert_visc is applied, for nlVstress
   !                                                    !                                      [L T-1 ~> m s-1]
-  ! real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: vold ! v-velocity before vert_visc is applied, for fpmix
+  ! real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: vold ! v-velocity before vert_visc is applied, for nlVstress
   !                                                    !                                      [L T-1 ~> m s-1]
   real :: pres_to_eta ! A factor that converts pressures to the units of eta
                       ! [H T2 R-1 L-2 ~> m Pa-1 or kg m-2 Pa-1]
@@ -745,7 +745,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
     call uvchksum("0 before vertvisc: [uv]p", up, vp, G%HI,haloshift=0, symmetric=sym, unscale=US%L_T_to_m_s)
   endif
 
-  !  if (CS%fpmix) then
+  !  if (CS%nlVstress) then
   !    uold(:,:,:) = 0.0
   !    vold(:,:,:) = 0.0
   !    do k=1,nz ; do j=js,je ; do I=Isq,Ieq
@@ -762,10 +762,10 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%AD_pred, CS%CDp, G, &
                 GV, US, CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
 
-  !  if (CS%fpmix) then
+  !  if (CS%nlVstress) then
   !    hbl(:,:) = 0.0
   !    if (associated(visc%h_ML)) hbl(:,:) = visc%h_ML(:,:)
-  !    call vertFPmix(up, vp, uold, vold, hbl, h, forces, &
+  !    call vertNLstress(up, vp, hbl, h, forces, &
   !                   dt_pred, G, GV, US, CS%vertvisc_CSp, CS%OBC)
   !    call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%ADp, CS%CDp, G, &
   !                GV, US, CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
@@ -978,7 +978,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   ! u_av <- u_av + dt d/dz visc d/dz u_av
   call cpu_clock_begin(id_clock_vertvisc)
 
-  !  if (CS%fpmix) then
+  !  if (CS%nlVstress) then
   !    uold(:,:,:) = 0.0
   !    vold(:,:,:) = 0.0
   !    do k=1,nz ; do j=js,je ; do I=Isq,Ieq
@@ -994,8 +994,8 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   call vertvisc(u_inst, v_inst, h, forces, visc, dt, CS%OBC, CS%ADp, CS%CDp, G, GV, US, &
                 CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
 
-  !  if (CS%fpmix) then
-  !    call vertFPmix(u_inst, v_inst, uold, vold, hbl, h, forces, dt, &
+  !  if (CS%nlVstress) then
+  !    call vertNLstress(u_inst, v_inst, hbl, h, forces, dt, &
   !                   G, GV, US, CS%vertvisc_CSp, CS%OBC)
   !    call vertvisc(u_inst, v_inst, h, forces, visc, dt, CS%OBC, CS%ADp, CS%CDp, G, GV, US, &
   !                  CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
@@ -1061,7 +1061,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
     call update_segment_thickness_reservoirs(G, GV, uhtr, vhtr, h, CS%OBC)
   endif
 
-  !  if (CS%fpmix) then
+  !  if (CS%nlVstress) then
   !    if (CS%id_uold > 0) call post_data(CS%id_uold, uold, CS%diag)
   !    if (CS%id_vold > 0) call post_data(CS%id_vold, vold, CS%diag)
   !  endif
@@ -1399,10 +1399,10 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
                  "predictor step. This should make little difference in the "//&
                  "deep ocean but appears to help for vanished layers. If false, "//&
                  "uses the same mass source as from the predictor step.", default=.true.)
-  ! call get_param(param_file, mdl, "FPMIX", CS%fpmix, &
-  !                "If true, apply profiles of momentum flux magnitude and direction.", &
+  ! call get_param(param_file, mdl, "NL_VSTRESS", CS%nlVstress, &
+  !                "If true, add non-local momentum flux increments.", &
   !                default=.false.)
-  CS%fpmix = .false.
+  CS%nlVstress = .false.
   call get_param(param_file, mdl, "REMAP_AUXILIARY_VARS", CS%remap_aux, &
                  "If true, apply ALE remapping to all of the auxiliary 3-dimensional "//&
                  "variables that are needed to reproduce across restarts, similarly to "//&
@@ -1790,7 +1790,7 @@ end subroutine end_dyn_split_RK2b
 !!  initialize_dyn_split_RK2b initializes the cpu clocks that are
 !!  used in this module.  For largely historical reasons, this module
 !!  does not have its own control structure, but shares the same
-!!  control structure with MOM.F90 and the other MOM_dynamics_...
+!!  control structure with MOM.F90 and the other MOM_dynamics_???
 !!  modules.
 
 end module MOM_dynamics_split_RK2b
