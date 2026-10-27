@@ -1063,7 +1063,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
         DX_dyBu = G%dxBu(I,J) * G%IdyBu(I,J)
 
         Del2vort_q(I,J) = DY_dxBu * ((vort_xy_dx(i+1,J) * G%IdyCv(i+1,J)) - (vort_xy_dx(i,J) * G%IdyCv(i,J))) + &
-                          DX_dyBu * ((vort_xy_dy(I,j+1) * G%IdyCu(I,j+1)) - (vort_xy_dy(I,j) * G%IdyCu(I,j)))
+                          DX_dyBu * ((vort_xy_dy(I,j+1) * G%IdxCu(I,j+1)) - (vort_xy_dy(I,j) * G%IdxCu(I,j)))
       enddo ; enddo
       ! endif
 
