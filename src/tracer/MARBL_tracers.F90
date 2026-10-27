@@ -199,6 +199,12 @@ type, public :: MARBL_tracers_CS ; private
   !! so currently using temp_MARBL_diag for that.
   integer, allocatable :: id_surface_flux_out(:)  !< register_diag indices for surface_flux output
   integer, allocatable :: id_surface_flux_from_salt_flux(:)  !< register_diag indices for surface_flux from salt_flux
+  integer, allocatable :: id_boundary_forcing_content_tend(:)  !< register_diag indices for tracer content tendency
+                                                               !! from boundary forcing
+  integer, allocatable :: id_diabatic_content_tend(:)  !< register_diag indices for tracer content tendency
+                                                       !! from diabatic diffusion
+  integer, allocatable :: id_interior_content_tend(:)  !< register_diag indices for tracer content tendency
+                                                       !! from MARBL interior tendencies
   type(temp_MARBL_diag), allocatable :: interior_tendency_out(:)  !< collect interior tendencies for diagnostic output
   type(temp_MARBL_diag), allocatable :: interior_tendency_out_zint(:)  !< vertical integral of interior tendencies
                                                                        !! (full column)
@@ -958,6 +964,9 @@ subroutine initialize_MARBL_tracers(restart, day, G, GV, US, h, param_file, diag
   ! Register per-tracer diagnostics computed from MARBL surface flux / interior tendency values
   allocate(CS%id_surface_flux_out(CS%ntr))
   allocate(CS%id_surface_flux_from_salt_flux(CS%ntr))
+  allocate(CS%id_boundary_forcing_content_tend(CS%ntr))
+  allocate(CS%id_diabatic_content_tend(CS%ntr))
+  allocate(CS%id_interior_content_tend(CS%ntr))
   allocate(CS%interior_tendency_out(CS%ntr))
   allocate(CS%interior_tendency_out_zint(CS%ntr))
   allocate(CS%interior_tendency_out_zint_100m(CS%ntr))
@@ -970,10 +979,38 @@ subroutine initialize_MARBL_tracers(restart, day, G, GV, US, h, param_file, diag
         day, trim(longname), trim(units), conversion=US%Z_to_m*US%s_to_T)
 
     write(name, "(2A)") "STF_SALT_", trim(MARBL_instances%tracer_metadata(m)%short_name)
-    write(longname, "(2A)") trim(MARBL_instances%tracer_metadata(m)%long_name), " Surface Flux from Salt Flux"
+    write(longname, "(2A)") trim(MARBL_instances%tracer_metadata(m)%long_name), &
+        " Surface Flux from Salt Flux"
     CS%id_surface_flux_from_salt_flux(m) = register_diag_field("ocean_model", trim(name), &
         diag%axesT1, & ! T => tracer grid? 1 => no vertical grid
         day, trim(longname), trim(units), conversion=US%Z_to_m*US%s_to_T)
+
+    write(name, "(3A)") "boundary_forcing_", trim(MARBL_instances%tracer_metadata(m)%short_name), &
+        "_cont_tendency"
+    write(longname, "(3A)") "Boundary forcing ", &
+        trim(MARBL_instances%tracer_metadata(m)%short_name), " Layer Content Tendency"
+    write(units, "(2A)") trim(MARBL_instances%tracer_metadata(m)%units), " m/s"
+    CS%id_boundary_forcing_content_tend(m) = register_diag_field("ocean_model", trim(name), &
+        diag%axesTL, day, trim(longname), trim(units), v_extensive=.true., &
+        conversion=GV%H_to_m*US%s_to_T)
+
+    write(name, "(3A)") "diabatic_", trim(MARBL_instances%tracer_metadata(m)%short_name), &
+        "_cont_tendency"
+    write(longname, "(3A)") "Diabatic ", &
+        trim(MARBL_instances%tracer_metadata(m)%short_name), " Layer Content Tendency"
+    write(units, "(2A)") trim(MARBL_instances%tracer_metadata(m)%units), " m/s"
+    CS%id_diabatic_content_tend(m) = register_diag_field("ocean_model", trim(name), &
+        diag%axesTL, day, trim(longname), trim(units), v_extensive=.true., &
+        conversion=GV%H_to_m*US%s_to_T)
+
+    write(name, "(3A)") "interior_", trim(MARBL_instances%tracer_metadata(m)%short_name), &
+        "_cont_tendency"
+    write(longname, "(2A)") trim(MARBL_instances%tracer_metadata(m)%short_name), &
+        " Layer Content Tendency from Interior Source-Sink"
+    write(units, "(2A)") trim(MARBL_instances%tracer_metadata(m)%units), " m/s"
+    CS%id_interior_content_tend(m) = register_diag_field("ocean_model", trim(name), &
+        diag%axesTL, day, trim(longname), trim(units), v_extensive=.true., &
+        conversion=GV%H_to_m*US%s_to_T)
 
     write(name, "(2A)") "J_", trim(MARBL_instances%tracer_metadata(m)%short_name)
     write(longname, "(2A)") trim(MARBL_instances%tracer_metadata(m)%long_name), " Source Sink Term"
@@ -1511,15 +1548,19 @@ subroutine MARBL_tracers_column_physics(h_old, ea, eb, fluxes, dt, G, GV, US, CS
   real, dimension(SZI_(G),SZJ_(G)) :: ref_mask ! Mask for 2D MARBL diags using ref_depth [1]
   real, dimension(SZI_(G),SZJ_(G)) :: riv_flux_loc ! Local copy of CS%RIV_FLUXES*dt [conc H ~> mmol m-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: h_work ! Used so that h can be modified [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: tr_work ! tracer value before process is applied [conc]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: cont_tend ! tracer content tend [conc m s-1 or conc kg m-2 s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: bot_flux_to_tend  ! Conversion factor for bottom tlux -> tend
                                                                 ! [Z-1 ~> m-1]
   real :: cum_bftt_dz     ! sum of bot_flux_to_tend * dz from the bottom layer to current layer [1]
   real, dimension(0:GV%ke) :: zi  ! z-coordinate interface depth [Z ~> m]
   real, dimension(GV%ke) :: zc  ! z-coordinate layer center depth [Z ~> m]
   real, dimension(GV%ke) :: dz  ! z-coordinate cell thickness [H ~> m]
+  real :: Idt  ! The inverse of the timestep [T-1 ~> s-1]
   integer :: i, j, k, is, ie, js, je, nz, m
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = GV%ke
+  Idt = 0.0 ; if (dt > 0.0) Idt = 1. / dt
 
   if (.not.associated(CS)) return
 
@@ -1953,14 +1994,37 @@ subroutine MARBL_tracers_column_physics(h_old, ea, eb, fluxes, dt, G, GV, US, CS
         if (CS%debug) &
           call hchksum(riv_flux_loc(:,:), &
               trim(MARBL_instances%tracer_metadata(m)%short_name)//' riv flux', G%HI, unscale=GV%H_to_m)
+        if (CS%id_boundary_forcing_content_tend(m) > 0) then
+          do k=1,nz ;do j=js,je ; do i=is,ie
+            tr_work(i,j,k) = CS%tracer_data(m)%tr(i,j,k)
+          enddo ; enddo ; enddo
+        endif
         call applyTracerBoundaryFluxesInOut(G, GV, CS%tracer_data(m)%tr(:,:,:) , dt, fluxes, h_work, &
             evap_CFL_limit, minimum_forcing_depth, in_flux_optional=riv_flux_loc)
+        if (CS%id_boundary_forcing_content_tend(m) > 0) then
+          do k=1,nz ;do j=js,je ; do i=is,ie
+            cont_tend(i,j,k) = Idt * &
+                (h_work(i,j,k) * CS%tracer_data(m)%tr(i,j,k) - h_old(i,j,k) * tr_work(i,j,k))
+          enddo ; enddo ; enddo
+          call post_data(CS%id_boundary_forcing_content_tend(m), cont_tend, CS%diag, alt_h=h_old)
+        endif
+        if (CS%id_diabatic_content_tend(m) > 0) then
+          do k=1,nz ;do j=js,je ; do i=is,ie
+            tr_work(i,j,k) = CS%tracer_data(m)%tr(i,j,k)
+          enddo ; enddo ; enddo
+        endif
       else
         call applyTracerBoundaryFluxesInOut(G, GV, CS%tracer_data(m)%tr(:,:,:) , dt, fluxes, h_work, &
             evap_CFL_limit, minimum_forcing_depth)
       endif
       call tracer_vertdiff(h_work, ea, eb, dt, CS%tracer_data(m)%tr(:,:,:), G, GV, &
           sfc_flux=GV%Rho0 * CS%STF(:,:,m))
+      if (CS%id_diabatic_content_tend(m) > 0) then
+        do k=1,nz ;do j=js,je ; do i=is,ie
+          cont_tend(i,j,k) = Idt * (h_work(i,j,k) * (CS%tracer_data(m)%tr(i,j,k) - tr_work(i,j,k)))
+        enddo ; enddo ; enddo
+        call post_data(CS%id_diabatic_content_tend(m), cont_tend, CS%diag, alt_h=h_work)
+      endif
     enddo
   else
     ! TODO: do we want to support these options? does not apply river fluxes!
@@ -2028,6 +2092,12 @@ subroutine MARBL_tracers_column_physics(h_old, ea, eb, fluxes, dt, G, GV, US, CS
     if (allocated(CS%interior_tendency_out(m)%field_3d)) &
       call post_data(CS%interior_tendency_out(m)%id, &
           CS%interior_tendency_out(m)%field_3d(:,:,:), CS%diag)
+      if (CS%id_interior_content_tend(m) > 0) then
+        do k=1,nz ;do j=js,je ; do i=is,ie
+          cont_tend(i,j,k) = h_old(i,j,k) * CS%interior_tendency_out(m)%field_3d(i,j,k)
+        enddo ; enddo ; enddo
+        call post_data(CS%id_interior_content_tend(m), cont_tend, CS%diag, alt_h=h_old)
+      endif
     if (allocated(CS%interior_tendency_out_zint(m)%field_2d)) &
       call post_data(CS%interior_tendency_out_zint(m)%id, &
           CS%interior_tendency_out_zint(m)%field_2d(:,:), CS%diag)
@@ -2364,6 +2434,12 @@ subroutine MARBL_tracers_end(CS)
     endif
     if (allocated(CS%ind_tr)) deallocate(CS%ind_tr)
     if (allocated(CS%id_surface_flux_out)) deallocate(CS%id_surface_flux_out)
+    if (allocated(CS%id_surface_flux_from_salt_flux)) &
+        deallocate(CS%id_surface_flux_from_salt_flux)
+    if (allocated(CS%id_boundary_forcing_content_tend)) &
+        deallocate(CS%id_boundary_forcing_content_tend)
+    if (allocated(CS%id_diabatic_content_tend)) deallocate(CS%id_diabatic_content_tend)
+    if (allocated(CS%id_interior_content_tend)) deallocate(CS%id_interior_content_tend)
     if (allocated(CS%interior_tendency_out)) deallocate(CS%interior_tendency_out)
     if (allocated(CS%interior_tendency_out_zint)) deallocate(CS%interior_tendency_out_zint)
     if (allocated(CS%interior_tendency_out_zint_100m)) &
