@@ -567,7 +567,7 @@ subroutine horizontal_viscosity(u, v, h, uh, vh, diffu, diffv, MEKE, VarMix, G, 
   ! Set the halo sizes used for the vorticity calculations.
   if ((CS%Leith_Kh) .or. (CS%Leith_Ah) .or. (CS%use_Leithy)) then
     js_vort = js_Kh-2 ; je_vort = Jeq+2 ; is_vort = is_Kh-2 ; ie_vort = Ieq+2
-    if ((G%isc-G%isd < 3) .or. (G%isc-G%isd < 3)) call MOM_error(FATAL, &
+    if ((G%isc-G%isd < 3) .or. (G%jsc-G%jsd < 3)) call MOM_error(FATAL, &
           "The minimum halo size is 3 when a Leith viscosity is being used.")
   else
     js_vort = js-2 ; je_vort = Jeq+1 ; is_vort = is-2 ; ie_vort = Ieq+1
